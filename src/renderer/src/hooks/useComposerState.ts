@@ -13,6 +13,7 @@ import { buildAgentStartupPlan } from '@/lib/tui-agent-startup'
 import { isGitRepoKind } from '../../../shared/repo-kind'
 import type {
   GitHubWorkItem,
+  LinearIssue,
   OrcaHooks,
   SetupDecision,
   SetupRunPolicy,
@@ -65,7 +66,10 @@ export type ComposerCardProps = {
   repoId: string
   onRepoChange: (value: string) => void
   name: string
-  onNameChange: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onNameValueChange: (value: string) => void
+  onSmartGitHubItemSelect: (item: GitHubWorkItem) => void
+  onSmartBranchSelect: (refName: string) => void
+  onSmartLinearIssueSelect: (issue: LinearIssue) => void
   agentPrompt: string
   onAgentPromptChange: (value: string) => void
   onPromptKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void
@@ -675,8 +679,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
           // discriminant, so the union-preserving shape must be asserted.
           // Why: the link popover intentionally does NOT surface
           // `envelope.errors?.issues`. Per-surface error copy lives in the
-          // Tasks view (TaskPage) and the new-workspace Create tab
-          // (CreateFromTab) — a partial-failure banner inside the small
+          // Tasks view (TaskPage) and the smart workspace-name field — a
+          // partial-failure banner inside the small
           // @-mention popover would crowd the input and the user would
           // already see the same error on the originating Tasks page. If a
           // future UX decision flips this, add an error row to the popover's
@@ -807,9 +811,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     }
   }, [name])
 
-  const handleNameChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>): void => {
-      const nextName = event.target.value
+  const handleNameValueChange = useCallback(
+    (nextName: string): void => {
       // Why: linked GitHub items should keep refreshing the suggested workspace
       // name only while the current value is still auto-managed. As soon as the
       // user edits the field by hand, later issue/PR selections must stop
@@ -824,7 +827,6 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     },
     [name]
   )
-
   const handleAddAttachment = useCallback(async (): Promise<void> => {
     try {
       const selectedPath = await window.api.shell.pickAttachment()
@@ -1042,6 +1044,79 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     [applyLinkedWorkItem]
   )
 
+  const handleSmartGitHubItemSelect = useCallback(
+    (item: GitHubWorkItem): void => {
+      applyLinkedWorkItem(item)
+      setStartFromResetHint(null)
+      if (item.type !== 'pr' || !selectedRepo) {
+        return
+      }
+      void window.api.worktrees
+        .resolvePrBase({
+          repoId: selectedRepo.id,
+          prNumber: item.number,
+          ...(item.branchName ? { headRefName: item.branchName } : {}),
+          ...(item.isCrossRepository !== undefined
+            ? { isCrossRepository: item.isCrossRepository }
+            : {})
+        })
+        .then((result) => {
+          if ('error' in result) {
+            return
+          }
+          handleBaseBranchPrSelect(result.baseBranch, item)
+        })
+    },
+    [applyLinkedWorkItem, handleBaseBranchPrSelect, selectedRepo]
+  )
+
+  const handleSmartBranchSelect = useCallback(
+    (refName: string): void => {
+      setBaseBranch(refName)
+      setStartFromResetHint(null)
+      if (!name.trim() || name === lastAutoNameRef.current) {
+        setName(refName)
+        lastAutoNameRef.current = refName
+      }
+    },
+    [name]
+  )
+
+  const handleSmartLinearIssueSelect = useCallback(
+    (issue: LinearIssue): void => {
+      setLinkedIssue('')
+      setLinkedPR(null)
+      setLinkedWorkItem({
+        type: 'issue',
+        // Why: Linear identifiers are strings (e.g. ENG-123); keep GitHub
+        // numeric metadata empty and carry the real source through the URL.
+        number: 0,
+        title: issue.title,
+        url: issue.url
+      })
+      const suggestedName = issue.title
+      if (!name.trim() || name === lastAutoNameRef.current) {
+        setName(suggestedName)
+        lastAutoNameRef.current = suggestedName
+      }
+      const details = [
+        `[${issue.identifier}] ${issue.title}`,
+        `Status: ${issue.state.name} · Team: ${issue.team.name}`,
+        issue.assignee ? `Assignee: ${issue.assignee.displayName}` : null,
+        issue.labels.length > 0 ? `Labels: ${issue.labels.join(', ')}` : null,
+        `URL: ${issue.url}`,
+        issue.description ? `\n${issue.description}` : null
+      ]
+        .filter(Boolean)
+        .join('\n')
+      if (!noteRef.current.trim() || noteRef.current === lastAutoNoteRef.current) {
+        setNote(details)
+        lastAutoNoteRef.current = details
+      }
+    },
+    [name]
+  )
+
   const handleOpenAgentSettings = useCallback((): void => {
     openSettingsTarget({ pane: 'agents', repoId: null })
     openSettingsPage()
@@ -1202,8 +1277,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       const workspaceName = getWorkspaceSeedName({
         explicitName: name,
         prompt: '',
-        linkedIssueNumber: null,
-        linkedPR: null,
+        linkedIssueNumber: parsedLinkedIssueNumber,
+        linkedPR,
         fallbackName: fallbackCreatureName
       })
       if (
@@ -1241,14 +1316,27 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         const worktree = result.worktree
 
         const trimmedNote = note.trim()
-        await applyWorktreeMeta(worktree.id, trimmedNote ? { comment: trimmedNote } : {})
+        await applyWorktreeMeta(worktree.id, {
+          ...(parsedLinkedIssueNumber !== null ? { linkedIssue: parsedLinkedIssueNumber } : {}),
+          ...(linkedPR !== null ? { linkedPR } : {}),
+          ...(trimmedNote ? { comment: trimmedNote } : {})
+        })
+
+        const quickPrompt = linkedWorkItem
+          ? linkedWorkItem.number === 0 && trimmedNote
+            ? trimmedNote
+            : renderIssueCommandTemplate(DEFAULT_ISSUE_COMMAND_TEMPLATE, {
+                issueNumber: parsedLinkedIssueNumber,
+                artifactUrl: linkedWorkItem.url
+              })
+          : ''
 
         const startupPlan =
           agent === null
             ? null
             : buildAgentStartupPlan({
                 agent,
-                prompt: '',
+                prompt: quickPrompt,
                 cmdOverrides: settings?.agentCmdOverrides ?? {},
                 platform: CLIENT_PLATFORM,
                 allowEmptyPromptLaunch: true
@@ -1287,10 +1375,13 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       clearNewWorkspaceDraft,
       createWorktree,
       fallbackCreatureName,
+      linkedPR,
+      linkedWorkItem,
       name,
       normalizedSparseDirectories,
       note,
       onCreated,
+      parsedLinkedIssueNumber,
       persistDraft,
       repoId,
       requiresExplicitSetupChoice,
@@ -1323,7 +1414,10 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     repoId,
     onRepoChange: handleRepoChange,
     name,
-    onNameChange: handleNameChange,
+    onNameValueChange: handleNameValueChange,
+    onSmartGitHubItemSelect: handleSmartGitHubItemSelect,
+    onSmartBranchSelect: handleSmartBranchSelect,
+    onSmartLinearIssueSelect: handleSmartLinearIssueSelect,
     agentPrompt,
     onAgentPromptChange: setAgentPrompt,
     onPromptKeyDown: handlePromptKeyDown,

@@ -11,15 +11,15 @@ import {
   Settings2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import RepoCombobox from '@/components/repo/RepoCombobox'
 import AgentCombobox from '@/components/agent/AgentCombobox'
 import { AGENT_CATALOG } from '@/lib/agent-catalog'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
-import type { SparsePreset, TuiAgent } from '../../../shared/types'
+import type { GitHubWorkItem, LinearIssue, SparsePreset, TuiAgent } from '../../../shared/types'
 import SparseCheckoutPresetSelect from '@/components/sparse/SparseCheckoutPresetSelect'
+import SmartWorkspaceNameField from '@/components/new-workspace/SmartWorkspaceNameField'
 
 const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac')
 
@@ -35,7 +35,10 @@ type NewWorkspaceComposerCardProps = {
   repoId: string
   onRepoChange: (value: string) => void
   name: string
-  onNameChange: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onNameValueChange: (value: string) => void
+  onSmartGitHubItemSelect: (item: GitHubWorkItem) => void
+  onSmartBranchSelect: (refName: string) => void
+  onSmartLinearIssueSelect: (issue: LinearIssue) => void
   detectedAgentIds: Set<TuiAgent> | null
   onOpenAgentSettings: () => void
   advancedOpen: boolean
@@ -175,7 +178,10 @@ export default function NewWorkspaceComposerCard({
   repoId,
   onRepoChange,
   name,
-  onNameChange,
+  onNameValueChange,
+  onSmartGitHubItemSelect,
+  onSmartBranchSelect,
+  onSmartLinearIssueSelect,
   detectedAgentIds,
   onOpenAgentSettings,
   advancedOpen,
@@ -288,26 +294,25 @@ export default function NewWorkspaceComposerCard({
           <label className="text-xs font-medium text-muted-foreground">
             Workspace Name <span className="text-muted-foreground/70">[Optional]</span>
           </label>
-          <Input
-            ref={nameInputRef}
+          <SmartWorkspaceNameField
+            inputRef={nameInputRef}
+            repos={eligibleRepos}
+            repoId={repoId}
             value={name}
-            onChange={onNameChange}
-            onKeyDown={(event) => {
+            onValueChange={onNameValueChange}
+            onGitHubItemSelect={onSmartGitHubItemSelect}
+            onBranchSelect={onSmartBranchSelect}
+            onLinearIssueSelect={onSmartLinearIssueSelect}
+            onPlainEnter={() => {
               // Why: Enter on the workspace name advances focus to the next
               // field (Agent combobox) rather than submitting, letting the user
               // progress through the form with just the keyboard.
-              if (event.key !== 'Enter' || event.shiftKey || event.metaKey || event.ctrlKey) {
-                return
-              }
-              event.preventDefault()
               const root = composerRef?.current
               const agentTrigger = root?.querySelector<HTMLElement>(
                 '[data-agent-combobox-root="true"][role="combobox"]'
               )
               agentTrigger?.focus()
             }}
-            placeholder="Workspace name"
-            className="h-9 text-sm"
           />
         </div>
 

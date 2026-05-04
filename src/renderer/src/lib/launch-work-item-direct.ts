@@ -47,7 +47,7 @@ export type LaunchWorkItemDirectArgs = {
   openModalFallback: () => void
   /** Optional base branch to start the worktree from. When omitted the
    *  worktree inherits the repo's effective base ref. Used by the
-   *  "Create from…" PR row to branch from the PR's head so the first
+   *  smart workspace-name PR selection to branch from the PR's head so the first
    *  commit lands on the correct base without the user touching the UI. */
   baseBranch?: string
 }
