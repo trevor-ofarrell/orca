@@ -176,12 +176,14 @@ function App(): React.JSX.Element {
     let uiHydrated = false
     // Why (issue #1158): track whether the success-path call to
     // reconnectPersistedTerminals started so the catch path doesn't run it a
-    // second time. Reconnect mutates store state via set() blocks inside its
-    // loops (assigning ptyIds, draining pendingReconnect* maps); re-entering
+    // second time. Reconnect mutates store state via per-tab set() blocks
+    // inside its loops (populating tabsByWorktree / ptyIdsByTabId); re-entering
     // it on partially-mutated state would double-set ptyIds and drain pending*
     // maps twice. If the success-path call started and threw mid-loop, those
-    // set() blocks may have already flipped workspaceSessionReady — but if
-    // they didn't, we still need to force the flag true so the UI mounts.
+    // per-tab set() blocks may have populated tabsByWorktree / ptyIdsByTabId
+    // for some tabs but did NOT reach the tail set() that flips
+    // workspaceSessionReady — so we still need to force the flag true so the
+    // UI mounts.
     let reconnectStarted = false
     void (async () => {
       try {
@@ -358,7 +360,7 @@ function App(): React.JSX.Element {
             action: {
               label: 'Restart now',
               onClick: () => {
-                void window.api.app.relaunch?.()
+                void window.api.app.relaunch()
               }
             }
           })
@@ -404,12 +406,13 @@ function App(): React.JSX.Element {
             }
           } else {
             // Why (issue #1158): the success-path call to
-            // reconnectPersistedTerminals already started; its set() blocks
-            // may have flipped workspaceSessionReady before throwing mid-loop.
-            // Don't re-run reconnect over partially-mutated state (it would
-            // double-set ptyIds and drain pending* maps twice). Force the
-            // flag true so the UI mounts even if the partial run never
-            // reached the line that flips it. The same pending* clear applies
+            // reconnectPersistedTerminals already started; its per-tab set()
+            // blocks may have populated tabsByWorktree / ptyIdsByTabId for
+            // some tabs but did NOT reach the tail set() that flips
+            // workspaceSessionReady (that runs after the loop completes).
+            // Don't re-run reconnect over partially-mutated state — doing so
+            // would double-set ptyIds and drain pending* maps twice. Force
+            // the flag true so the UI mounts. The same pending* clear applies
             // here for the same reason as above.
             useAppStore.setState({
               workspaceSessionReady: true,

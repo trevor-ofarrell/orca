@@ -64,11 +64,13 @@
 - src/renderer/src/store/slices/terminals-hydration.test.ts:280-286 | Low | "toggles both ways" test — coupled to terminals.ts:105 skip
 - src/renderer/src/lib/workspace-session.test.ts:144-202 | Low | integration test naming — describes block content
 - src/renderer/src/store/slices/terminals.ts:98-106 | Low | hydrationSucceeded in TerminalSlice — matches existing convention
+- src/renderer/src/App.tsx:397-419 | Medium | fallback setState doesn't stash deferredSshSessionIdsByTabId — recovery-of-recovery path; user is in degraded mode and will restart per toast prompt. Acceptable trade-off
+- src/renderer/src/App.tsx:353-364 | Low | toast lacks explicit id for dedup — single-shot path; speculative future-proofing
 
 ## Iteration State
 
-Current iteration: 2
-Last completed phase: Iteration 1 fixes complete (typecheck + tests pass)
+Current iteration: 3
+Last completed phase: Iteration 2 fixes complete (typecheck + tests pass)
 Files fixed iteration 1:
 - src/main/persistence.ts (load() backup fallback, chained writes, rotation-after-write, ENOENT handling)
 - src/main/persistence.test.ts (updated existing tests for new semantics + 6 new tests)
