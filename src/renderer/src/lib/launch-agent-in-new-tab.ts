@@ -62,17 +62,19 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
   const cmdOverrides = store.settings?.agentCmdOverrides ?? {}
   const trimmedPrompt = prompt?.trim() ?? ''
   const hasPrompt = trimmedPrompt.length > 0
-  const injectionMode = TUI_AGENT_CONFIG[agent].promptInjectionMode
+  const agentConfig = TUI_AGENT_CONFIG[agent]
+  const injectionMode = agentConfig.promptInjectionMode
   const isFollowupPath = injectionMode === 'stdin-after-start'
+  const hasDraftMechanism = Boolean(agentConfig.draftPromptFlag || agentConfig.draftPromptEnvVar)
 
-  // Why: argv/flag agents fold the prompt into the launch command (atomic
-  // shell handoff, no readiness race). Followup-path agents have no such
-  // flag; we land the prompt as an unsent draft via the native prefill flag
-  // when available, otherwise via post-launch bracketed paste.
+  // Why: argv/flag agents without a draft mechanism fold the prompt into the
+  // launch command. Agents with a `draftPromptFlag` (claude) or
+  // `draftPromptEnvVar` (pi) — or any followup-path agent — land the prompt
+  // as an unsent draft via the native prefill or post-launch bracketed paste.
   let startupPlan: AgentStartupPlan | null = null
   let pasteDraftAfterLaunch: string | null = null
 
-  if (hasPrompt && isFollowupPath) {
+  if (hasPrompt && (hasDraftMechanism || isFollowupPath)) {
     const draftPlan = buildAgentDraftLaunchPlan({
       agent,
       draft: trimmedPrompt,
@@ -87,13 +89,13 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
         followupPrompt: null,
         ...(draftPlan.env ? { env: draftPlan.env } : {})
       }
-    } else {
-      // Why: no native prefill flag → launch empty and bracketed-paste the
-      // draft once the agent's input box is ready. Auto-submitting via a
-      // typed `\r` after a readiness wait carries a small race (if readiness
-      // detection misses, the `\r` runs in the host shell). Drafting via
-      // bracketed paste avoids the `\r` entirely and lets the user confirm
-      // visually before sending.
+    } else if (isFollowupPath) {
+      // Why: no native prefill flag on a followup-path agent → launch empty
+      // and bracketed-paste the draft once the agent's input box is ready.
+      // Auto-submitting via a typed `\r` after a readiness wait carries a
+      // small race (if readiness detection misses, the `\r` runs in the host
+      // shell). Drafting via bracketed paste avoids the `\r` entirely and
+      // lets the user confirm visually before sending.
       startupPlan = buildAgentStartupPlan({
         agent,
         prompt: '',
@@ -102,6 +104,19 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
         allowEmptyPromptLaunch: true
       })
       pasteDraftAfterLaunch = trimmedPrompt
+    } else {
+      // Theoretical: an argv/flag agent declares a draft mechanism but
+      // `buildAgentDraftLaunchPlan` returned null. There's no input box to
+      // paste into, so fall back to argv submit rather than launching empty.
+      // Every shipped agent with `draftPromptFlag`/`draftPromptEnvVar`
+      // returns a non-null plan, so this branch is defensive only.
+      startupPlan = buildAgentStartupPlan({
+        agent,
+        prompt: trimmedPrompt,
+        cmdOverrides,
+        platform: CLIENT_PLATFORM,
+        allowEmptyPromptLaunch: false
+      })
     }
   } else {
     // argv/flag agents OR no prompt at all (existing quick-launch behavior).
@@ -157,20 +172,24 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       agent,
       onTimeout: () => {
         const state = useAppStore.getState()
-        const stillOpen = Object.values(state.tabsByWorktree).some((tabs) =>
-          tabs.some((t) => t.id === tabId)
-        )
-        if (!stillOpen) {
-          return
+        const tabsForWorktree = state.tabsByWorktree[worktreeId] ?? []
+        const tab = tabsForWorktree.find((t) => t.id === tabId)
+        // Why: if the PTY never spawned, QuickLaunch's 5s watchdog already
+        // surfaced the launch failure. Don't double-toast for the same root
+        // cause. Looking up directly in `worktreeId` (not scanning every
+        // worktree) also preserves "still in this worktree" intent.
+        if (!tab) {
+          return // tab closed by user
+        }
+        if (tab.ptyId === null) {
+          return // launch failed; QuickLaunch handled the user-facing toast
         }
         if (state.activeWorktreeId !== worktreeId) {
           return
         }
-        toast.message(
-          "Agent took too long to start. Your notes weren't sent — paste them in once the agent is idle."
-        )
+        toast.message("Your notes weren't sent — paste them once the agent is ready.")
         track('agent_error', {
-          error_class: 'unknown',
+          error_class: 'paste_readiness_timeout',
           agent_kind: tuiAgentToAgentKind(agent)
         })
       }

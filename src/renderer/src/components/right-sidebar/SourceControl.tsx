@@ -182,6 +182,9 @@ function SourceControlInner(): React.JSX.Element {
   const commitInFlightRef = useRef<Record<string, boolean>>({})
   const activeWorktree = useActiveWorktree()
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
+  const activeGroupId = useAppStore((s) =>
+    activeWorktreeId ? s.activeGroupIdByWorktree[activeWorktreeId] : undefined
+  )
   const worktreeMap = useWorktreeMap()
   const rightSidebarTab = useAppStore((s) => s.rightSidebarTab)
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
@@ -1272,37 +1275,35 @@ function SourceControlInner(): React.JSX.Element {
                   </span>
                 )}
               </button>
-              {diffCommentCount > 0 && activeWorktreeId && (
-                <DropdownMenu>
-                  <TooltipProvider delayDuration={400}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                            aria-label="Send notes to agent"
-                          >
-                            <Send className="size-3.5" />
-                          </button>
-                        </DropdownMenuTrigger>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" sideOffset={6}>
-                        Send notes to agent
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <DropdownMenuContent align="end" className="min-w-[180px]">
-                    <QuickLaunchAgentMenuItems
-                      worktreeId={activeWorktreeId}
-                      groupId={activeWorktreeId}
-                      onFocusTerminal={focusTerminalTabSurface}
-                      prompt={diffCommentsPrompt}
-                      launchSource="diff_notes_send"
-                    />
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+              <DropdownMenu>
+                <TooltipProvider delayDuration={400}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                          aria-label="Send notes to agent"
+                        >
+                          <Send className="size-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" sideOffset={6}>
+                      Send notes to agent
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <DropdownMenuContent align="end" className="min-w-[180px]">
+                  <QuickLaunchAgentMenuItems
+                    worktreeId={activeWorktreeId}
+                    groupId={activeGroupId ?? activeWorktreeId}
+                    onFocusTerminal={focusTerminalTabSurface}
+                    prompt={diffCommentsPrompt}
+                    launchSource="diff_notes_send"
+                  />
+                </DropdownMenuContent>
+              </DropdownMenu>
               {diffCommentCount > 0 && (
                 <TooltipProvider delayDuration={400}>
                   <Tooltip>
