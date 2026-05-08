@@ -453,7 +453,7 @@ branch refs/heads/main
     const calls = getGitCalls()
     expect(calls).toEqual(
       expect.arrayContaining([
-        'git worktree add --no-checkout -b feature/test /repo-feature',
+        'git worktree add --no-checkout --no-track -b feature/test /repo-feature',
         'git sparse-checkout init --cone',
         'git sparse-checkout set -- packages/web',
         'git worktree remove --force /repo-feature',

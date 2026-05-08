@@ -207,13 +207,34 @@ describe('addWorktree', () => {
   })
 
   it('creates the worktree without touching the local base ref by default', async () => {
-    gitExecFileAsyncMock.mockResolvedValueOnce({ stdout: '' })
+    gitExecFileAsyncMock.mockResolvedValueOnce({ stdout: '' }) // worktree add
+    gitExecFileAsyncMock.mockResolvedValueOnce({ stdout: '' }) // config push.autoSetupRemote
 
     await addWorktree('/repo', '/repo-feature', 'feature/test', 'origin/main')
 
     expect(gitExecFileAsyncMock.mock.calls).toEqual([
-      [['worktree', 'add', '-b', 'feature/test', '/repo-feature', 'origin/main'], { cwd: '/repo' }]
+      [
+        ['worktree', 'add', '--no-track', '-b', 'feature/test', '/repo-feature', 'origin/main'],
+        { cwd: '/repo' }
+      ],
+      [['config', '--local', 'push.autoSetupRemote', 'true'], { cwd: '/repo-feature' }]
     ])
+  })
+
+  it('warns but does not throw when push.autoSetupRemote config fails', async () => {
+    gitExecFileAsyncMock.mockResolvedValueOnce({ stdout: '' }) // worktree add
+    gitExecFileAsyncMock.mockRejectedValueOnce(new Error('config locked'))
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(
+      addWorktree('/repo', '/repo-feature', 'feature/test', 'origin/main')
+    ).resolves.toBeUndefined()
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'addWorktree: failed to set push.autoSetupRemote',
+      expect.any(Error)
+    )
+    warnSpy.mockRestore()
   })
 
   it('fast-forwards with reset --hard when localBranch is checked out in primary worktree', async () => {
@@ -225,6 +246,7 @@ describe('addWorktree', () => {
       .mockResolvedValueOnce({ stdout: '' }) // status --porcelain (in /repo)
       .mockResolvedValueOnce({ stdout: '' }) // reset --hard (in /repo)
       .mockResolvedValueOnce({ stdout: '' }) // worktree add
+      .mockResolvedValueOnce({ stdout: '' }) // config push.autoSetupRemote
 
     await addWorktree('/repo', '/repo-feature', 'feature/test', 'origin/main', true)
 
@@ -233,7 +255,11 @@ describe('addWorktree', () => {
       [['worktree', 'list', '--porcelain'], { cwd: '/repo' }],
       [['status', '--porcelain', '--untracked-files=no'], { cwd: '/repo' }],
       [['reset', '--hard', 'origin/main'], { cwd: '/repo' }],
-      [['worktree', 'add', '-b', 'feature/test', '/repo-feature', 'origin/main'], { cwd: '/repo' }]
+      [
+        ['worktree', 'add', '--no-track', '-b', 'feature/test', '/repo-feature', 'origin/main'],
+        { cwd: '/repo' }
+      ],
+      [['config', '--local', 'push.autoSetupRemote', 'true'], { cwd: '/repo-feature' }]
     ])
   })
 
@@ -246,6 +272,7 @@ describe('addWorktree', () => {
       .mockResolvedValueOnce({ stdout: '' }) // status --porcelain (in /repo-main-wt)
       .mockResolvedValueOnce({ stdout: '' }) // reset --hard (in /repo-main-wt)
       .mockResolvedValueOnce({ stdout: '' }) // worktree add
+      .mockResolvedValueOnce({ stdout: '' }) // config push.autoSetupRemote
 
     await addWorktree('/repo', '/repo-feature', 'feature/test', 'origin/main', true)
 
@@ -266,6 +293,7 @@ describe('addWorktree', () => {
       .mockResolvedValueOnce({ stdout: worktreeListOutput }) // worktree list --porcelain
       .mockResolvedValueOnce({ stdout: '' }) // update-ref
       .mockResolvedValueOnce({ stdout: '' }) // worktree add
+      .mockResolvedValueOnce({ stdout: '' }) // config push.autoSetupRemote
 
     await addWorktree('/repo', '/repo-feature', 'feature/test', 'origin/main', true)
 
@@ -282,24 +310,33 @@ describe('addWorktree', () => {
       .mockResolvedValueOnce({ stdout: worktreeListOutput }) // worktree list --porcelain
       .mockResolvedValueOnce({ stdout: ' M package.json\n' }) // status --porcelain (dirty)
       .mockResolvedValueOnce({ stdout: '' }) // worktree add
+      .mockResolvedValueOnce({ stdout: '' }) // config push.autoSetupRemote
 
     await addWorktree('/repo', '/repo-feature', 'feature/test', 'origin/main', true)
 
-    // No reset --hard or update-ref — just merge-base, worktree list, status, worktree add
-    expect(gitExecFileAsyncMock.mock.calls).toHaveLength(4)
+    // No reset --hard or update-ref — just merge-base, worktree list, status, worktree add, config
+    expect(gitExecFileAsyncMock.mock.calls).toHaveLength(5)
     expect(gitExecFileAsyncMock.mock.calls[3]?.[0]).toEqual([
       'worktree',
       'add',
+      '--no-track',
       '-b',
       'feature/test',
       '/repo-feature',
       'origin/main'
     ])
+    expect(gitExecFileAsyncMock.mock.calls[4]?.[0]).toEqual([
+      'config',
+      '--local',
+      'push.autoSetupRemote',
+      'true'
+    ])
   })
 
   it('skips updating the local branch when it has diverged', async () => {
     gitExecFileAsyncMock.mockRejectedValueOnce(new Error('not a fast-forward'))
-    gitExecFileAsyncMock.mockResolvedValueOnce({ stdout: '' })
+    gitExecFileAsyncMock.mockResolvedValueOnce({ stdout: '' }) // worktree add
+    gitExecFileAsyncMock.mockResolvedValueOnce({ stdout: '' }) // config push.autoSetupRemote
 
     await addWorktree('/repo', '/repo-feature', 'feature/test', 'origin/main', true)
 
@@ -309,8 +346,12 @@ describe('addWorktree', () => {
         expect.objectContaining({ cwd: '/repo' })
       ],
       [
-        ['worktree', 'add', '-b', 'feature/test', '/repo-feature', 'origin/main'],
+        ['worktree', 'add', '--no-track', '-b', 'feature/test', '/repo-feature', 'origin/main'],
         expect.objectContaining({ cwd: '/repo' })
+      ],
+      [
+        ['config', '--local', 'push.autoSetupRemote', 'true'],
+        expect.objectContaining({ cwd: '/repo-feature' })
       ]
     ])
   })
@@ -323,6 +364,7 @@ describe('addWorktree', () => {
       .mockResolvedValueOnce({ stdout: '' }) // status --porcelain
       .mockResolvedValueOnce({ stdout: '' }) // reset --hard
       .mockResolvedValueOnce({ stdout: '' }) // worktree add
+      .mockResolvedValueOnce({ stdout: '' }) // config push.autoSetupRemote
 
     await addWorktree('/repo', '/repo-feature', 'feature/test', 'upstream/main', true)
 

@@ -184,11 +184,30 @@ export async function addWorktree(
   if (noCheckout) {
     args.push('--no-checkout')
   }
-  args.push('-b', branch, worktreePath)
+  // Why: --no-track keeps the new branch from inheriting the base ref's
+  // upstream, so `git status` doesn't report "behind by N" against the base
+  // pre-publish and tools/agents don't misread an unpublished branch as
+  // out-of-sync. First push sets the upstream — see push.autoSetupRemote
+  // below for the terminal ergonomics.
+  args.push('--no-track', '-b', branch, worktreePath)
   if (baseBranch) {
     args.push(baseBranch)
   }
   await gitExecFileAsync(args, { cwd: repoPath })
+
+  // Why: with --no-track there is no upstream until first push. Setting
+  // push.autoSetupRemote=true makes a plain `git push` from the terminal
+  // create origin/<branch> and set it as upstream automatically — matching
+  // user expectations from modern git without requiring `-u`. Scoped to
+  // this worktree's local config; safe because --no-track guarantees no
+  // wrong upstream exists at first push.
+  try {
+    await gitExecFileAsync(['config', '--local', 'push.autoSetupRemote', 'true'], {
+      cwd: worktreePath
+    })
+  } catch (error) {
+    console.warn('addWorktree: failed to set push.autoSetupRemote', error)
+  }
 }
 
 export async function addSparseWorktree(
