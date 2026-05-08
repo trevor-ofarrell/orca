@@ -228,4 +228,45 @@ describe('PaneManager — stablePaneId', () => {
     mgr.adoptStablePaneId(pane.id, snapshotId)
     expect(adopted).toEqual([[pane.id, snapshotId, minted]])
   })
+
+  it('adoptStablePaneId bails when target UUID is already bound to another pane', () => {
+    // Why: a corrupt snapshot could carry the same UUID twice. The bail must
+    // happen BEFORE the previous-mapping deletion so the conflicting pane
+    // keeps its current UUID intact and both bidirectional mappings remain
+    // consistent. splitPane needs a real DOM (see top-of-file mocks), so we
+    // simulate a sibling pane by injecting one directly via the manager's
+    // private createPaneInternal and exercising adoptStablePaneId against the
+    // resulting state.
+    const mgr = new PaneManager(makeFakeElement(), {})
+    const paneA = mgr.createInitialPane({ focus: false })
+    const sharedId = '33333333-3333-4333-8333-333333333333'
+    mgr.adoptStablePaneId(paneA.id, sharedId)
+    expect(mgr.getNumericIdForStable(sharedId)).toBe(paneA.id)
+
+    // Reach into the manager to inject a sibling without splitPane. Cast
+    // through unknown so the test stays type-safe but can prod the private
+    // maps the fake-DOM scaffolding can't otherwise reach.
+    type ManagerInternals = {
+      panes: Map<number, { id: number; stablePaneId: string }>
+      stableIdByNumericId: Map<number, string>
+      numericIdByStableId: Map<string, number>
+      nextPaneId: number
+    }
+    const internals = mgr as unknown as ManagerInternals
+    const siblingId = internals.nextPaneId++
+    const siblingMinted = '44444444-4444-4444-8444-444444444444'
+    internals.panes.set(siblingId, { id: siblingId, stablePaneId: siblingMinted })
+    internals.stableIdByNumericId.set(siblingId, siblingMinted)
+    internals.numericIdByStableId.set(siblingMinted, siblingId)
+
+    // Sibling tries to adopt the SAME UUID paneA already owns — must bail.
+    mgr.adoptStablePaneId(siblingId, sharedId)
+
+    // paneA keeps the shared UUID; sibling keeps its minted UUID. Both
+    // bidirectional mappings are consistent.
+    expect(mgr.getNumericIdForStable(sharedId)).toBe(paneA.id)
+    expect(mgr.getStablePaneId(paneA.id)).toBe(sharedId)
+    expect(mgr.getNumericIdForStable(siblingMinted)).toBe(siblingId)
+    expect(mgr.getStablePaneId(siblingId)).toBe(siblingMinted)
+  })
 })

@@ -359,17 +359,17 @@ export class PaneManager {
     if (previousStable === stablePaneId) {
       return
     }
-    if (previousStable) {
-      this.numericIdByStableId.delete(previousStable)
-    }
     const conflictingNumericId = this.numericIdByStableId.get(stablePaneId)
     if (conflictingNumericId !== undefined && conflictingNumericId !== numericId) {
       // Why: snapshot UUID is already mapped to a different live pane (corrupt
-      // snapshot or sibling-collision). Bail rather than create inconsistent
-      // bidirectional mappings — the freshly minted UUID stays in place; any
-      // retained agent rows under the conflicting key will surface as stale on
-      // click via surfaceStaleAgentRow rather than silently rerouting.
+      // snapshot or sibling-collision). Bail BEFORE mutating either map so the
+      // pane keeps its previously-minted UUID intact; any retained agent rows
+      // under the conflicting key will surface as stale on click via
+      // surfaceStaleAgentRow rather than silently rerouting.
       return
+    }
+    if (previousStable) {
+      this.numericIdByStableId.delete(previousStable)
     }
     pane.stablePaneId = stablePaneId
     this.stableIdByNumericId.set(numericId, stablePaneId)

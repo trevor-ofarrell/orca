@@ -156,9 +156,22 @@
 
 ## Iteration State
 
-Current iteration: 1
-Last completed phase: Combine + Validate
-Files fixed this iteration: []
+Current iteration: 2
+Last completed phase: Iteration 1 fixes applied + committed
+Files fixed iteration 1:
+- src/renderer/src/lib/pane-manager/pane-manager-types.ts (onPaneClosed signature)
+- src/renderer/src/lib/pane-manager/pane-manager.ts (closePane stable-id passthrough + adoptStablePaneId guard)
+- src/renderer/src/components/terminal-pane/use-terminal-pane-lifecycle.ts (use callback param)
+- src/renderer/src/components/terminal-pane/stale-agent-row.ts (dismissStaleAgentRowByKey helper)
+- src/renderer/src/components/sidebar/WorktreeCardAgents.tsx (inline dismissal for malformed paneKey)
+- src/shared/stable-pane-id.ts (drop /i flag)
+- src/shared/stable-pane-id.test.ts (uppercase rejection tests)
+- src/renderer/src/components/status-bar/mergeSnapshotAndSessions.ts (use shared parsePaneKey)
+- src/renderer/src/store/slices/terminals.ts (stale comments)
+- src/renderer/src/components/sidebar/smart-sort.ts (stale comment)
+- src/renderer/src/components/dashboard/useDashboardData.ts (stale comment)
+- src/renderer/src/components/sidebar/CacheTimer.tsx (stale comment)
+- src/main/agent-hooks/server.ts (stale comment)
 
 ## Validated Issues (✅ Fix this iteration)
 
