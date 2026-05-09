@@ -1,6 +1,7 @@
 /* oxlint-disable max-lines */
 import type * as React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { makePaneKey } from '../../../../shared/stable-pane-id'
 import { POST_REPLAY_FOCUS_REPORTING_RESET, POST_REPLAY_MODE_RESET } from './layout-serialization'
 import type * as UseNotificationDispatchModule from './use-notification-dispatch'
 
@@ -1158,6 +1159,9 @@ describe('connectPanePty', () => {
 
     agentExitedHandler()
 
-    expect(deps.setCacheTimerStartedAt).toHaveBeenCalledWith(`tab-1:${pane.stablePaneId}`, null)
+    expect(deps.setCacheTimerStartedAt).toHaveBeenCalledWith(
+      makePaneKey('tab-1', pane.stablePaneId),
+      null
+    )
   })
 })

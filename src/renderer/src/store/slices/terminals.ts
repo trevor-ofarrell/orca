@@ -8,6 +8,7 @@ import type {
   Worktree,
   WorkspaceSessionState
 } from '../../../../shared/types'
+import type { PaneKey } from '../../../../shared/stable-pane-id'
 import type { AgentStartedTelemetry } from '../../lib/worktree-activation'
 import { scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
 import { clearTransientTerminalState, emptyLayoutSnapshot } from './terminal-helpers'
@@ -157,11 +158,11 @@ export type TerminalSlice = {
   /** Register a `${tabId}:${stablePaneId}` → numeric paneId binding when a
    *  pane is created or adopts a snapshot UUID. Idempotent on identical
    *  values so PaneManager's onStableId* callbacks can fire freely. */
-  registerPaneKeyMapping: (paneKey: string, paneId: number) => void
+  registerPaneKeyMapping: (paneKey: PaneKey, paneId: number) => void
   /** Remove a `${tabId}:${stablePaneId}` mapping when a pane closes. Silent
    *  no-op when the entry isn't present (e.g. close fires before any mapping
    *  was registered for a transient/legacy pane). */
-  unregisterPaneKeyMapping: (paneKey: string) => void
+  unregisterPaneKeyMapping: (paneKey: PaneKey) => void
   /** Mark a tab as having unread activity (agent working→idle transition).
    *  Skipped when the tab is currently visible to the user — either as
    *  the global active terminal tab, or as the active tab of any split

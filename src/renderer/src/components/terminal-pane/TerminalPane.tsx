@@ -36,6 +36,7 @@ import {
 } from '@/lib/pane-manager/mobile-fit-overrides'
 import { getDriverForPty, onDriverChange } from '@/lib/pane-manager/mobile-driver-state'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
+import { makePaneKey } from '../../../../shared/stable-pane-id'
 
 // Why: registry lives in a leaf module so the store slice can import it
 // without re-entering the `slice → TerminalPane → store → slice` cycle
@@ -415,7 +416,7 @@ export default function TerminalPane({
         // handle for closing; identity uses the UUID.
         const stablePaneId = manager.getStablePaneId(paneId)
         if (stablePaneId) {
-          const paneKey = `${tabId}:${stablePaneId}`
+          const paneKey = makePaneKey(tabId, stablePaneId)
           // Why: clear the cache timer for this specific pane before closing it,
           // so the sidebar doesn't show a stale countdown for a pane that no
           // longer exists. The closeTab path handles bulk cleanup, but closing
@@ -556,7 +557,7 @@ export default function TerminalPane({
       // renderer-local handle for the in-place reconnect.
       const stablePaneId = manager.getStablePaneId(paneId)
       if (stablePaneId) {
-        setCacheTimerStartedAt(`${tabId}:${stablePaneId}`, null)
+        setCacheTimerStartedAt(makePaneKey(tabId, stablePaneId), null)
       }
       setTerminalError(null)
 

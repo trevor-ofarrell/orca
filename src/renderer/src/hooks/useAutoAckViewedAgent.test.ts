@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { makePaneKey } from '../../../shared/stable-pane-id'
 import { computeAutoAckTargets } from './useAutoAckViewedAgent'
 import { createTestStore, makeTab } from '../store/slices/store-test-helpers'
 import type { RetainedAgentEntry } from '../store/slices/agent-status'
@@ -32,7 +33,7 @@ describe('computeAutoAckTargets — codex retain race regression', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-05-05T12:00:00.000Z'))
     const store = createTestStore()
-    const paneKey = `tab-codex:${STABLE_2}`
+    const paneKey = makePaneKey('tab-codex', STABLE_2)
     const activeTabId = 'tab-codex'
 
     // 1. Codex starts working, user acks it (e.g. by clicking the row).
@@ -86,7 +87,7 @@ describe('computeAutoAckTargets — codex retain race regression', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-05-05T12:00:00.000Z'))
     const store = createTestStore()
-    const paneKey = `tab-codex:${STABLE_2}`
+    const paneKey = makePaneKey('tab-codex', STABLE_2)
     const activeTabId = 'tab-codex'
 
     store.getState().setAgentStatus(paneKey, {
@@ -119,7 +120,7 @@ describe('computeAutoAckTargets — codex retain race regression', () => {
 
   it('skips retained rows whose paneKey is on a different tab', () => {
     const store = createTestStore()
-    const paneKey = `tab-other:${STABLE_2}`
+    const paneKey = makePaneKey('tab-other', STABLE_2)
     store.getState().setAgentStatus(paneKey, {
       state: 'done',
       prompt: 'p',
@@ -147,7 +148,7 @@ describe('computeAutoAckTargets — codex retain race regression', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-05-05T12:00:00.000Z'))
     const store = createTestStore()
-    const paneKey = `tab-codex:${STABLE_2}`
+    const paneKey = makePaneKey('tab-codex', STABLE_2)
     const activeTabId = 'tab-codex'
 
     // Construct a (rare) state where retainedAgentsByPaneKey and
@@ -184,7 +185,7 @@ describe('computeAutoAckTargets — codex retain race regression', () => {
     // split tab used to ack EVERY paneKey starting with `${activeTabId}:`,
     // including the agent's pane the user never visually attended to.
     const store = createTestStore()
-    const claudePaneKey = `tab-split:${STABLE_2}`
+    const claudePaneKey = makePaneKey('tab-split', STABLE_2)
     const blankStable = '22222222-2222-4222-8222-222222222222'
     store.getState().setAgentStatus(claudePaneKey, {
       state: 'working',
@@ -204,7 +205,7 @@ describe('computeAutoAckTargets — codex retain race regression', () => {
     // populate stablePaneIdByLeafId — the hook resolves null in that case
     // and the helper must not fall back to tab-prefix walking.
     const store = createTestStore()
-    const paneKey = `tab-codex:${STABLE_2}`
+    const paneKey = makePaneKey('tab-codex', STABLE_2)
     store.getState().setAgentStatus(paneKey, {
       state: 'done',
       prompt: 'p',

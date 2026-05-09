@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isStablePaneId, parsePaneKey } from './stable-pane-id'
+import { isStablePaneId, makePaneKey, parsePaneKey } from './stable-pane-id'
 
 describe('isStablePaneId', () => {
   it('accepts a v4 UUID', () => {
@@ -24,6 +24,14 @@ describe('isStablePaneId', () => {
     // Why: renderer mints lowercase; accepting uppercase would let a
     // foreign-source UUID alias as a distinct paneKey in string-keyed maps.
     expect(isStablePaneId('AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA')).toBe(false)
+  })
+})
+
+describe('makePaneKey', () => {
+  it('constructs the cross-boundary pane key shape', () => {
+    expect(makePaneKey('tab-1', '11111111-1111-4111-8111-111111111111')).toBe(
+      'tab-1:11111111-1111-4111-8111-111111111111'
+    )
   })
 })
 

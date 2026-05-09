@@ -3,6 +3,7 @@ import { useAppStore } from '@/store'
 import type { AgentStatusEntry } from '../../../shared/agent-status-types'
 import type { RetainedAgentEntry } from '@/store/slices/agent-status'
 import type { TerminalLayoutSnapshot } from '../../../shared/types'
+import { makePaneKey } from '../../../shared/stable-pane-id'
 
 /** Read the active leaf's stablePaneId straight off the layout snapshot.
  *  Why this is the source of truth: the snapshot stores `activeLeafId`
@@ -35,8 +36,8 @@ function resolveActiveLeafStablePaneId(
  * exercise the decision against a real test store without needing a DOM.
  *
  * Returns the list of paneKeys that should be acked given the active tab AND
- * its active leaf's stablePaneId. The ack target is computed as
- * `${activeTabId}:${activeLeafStablePaneId}` — equality, not prefix — because
+ * its active leaf's stablePaneId. The ack target is built with makePaneKey —
+ * equality, not prefix — because
  * a multi-pane tab has multiple paneKeys with the same `${tabId}:` prefix and
  * only the leaf the user is actually looking at counts as "viewed". Walks
  * BOTH the live agent map AND the retained snapshot map: the inline agents
@@ -62,7 +63,7 @@ export function computeAutoAckTargets(
   if (activeLeafStablePaneId === null) {
     return []
   }
-  const targetKey = `${activeTabId}:${activeLeafStablePaneId}`
+  const targetKey = makePaneKey(activeTabId, activeLeafStablePaneId)
   const targets: string[] = []
   const liveEntry = state.agentStatusByPaneKey[targetKey]
   if (liveEntry) {

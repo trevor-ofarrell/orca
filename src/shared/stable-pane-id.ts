@@ -11,18 +11,33 @@
 
 const V4_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
+declare const stablePaneIdBrand: unique symbol
+declare const paneKeyBrand: unique symbol
+
+export type StablePaneId = string & { readonly [stablePaneIdBrand]: true }
+export type PaneKey = string & { readonly [paneKeyBrand]: true }
+
 /** Returns true when `value` is a lowercase v4 UUID. The renderer mints
  *  lowercase via crypto.randomUUID and the polyfill, so case-equality
  *  matters for paneKey-keyed maps to dedup correctly. */
-export function isStablePaneId(value: string): boolean {
+export function isStablePaneId(value: string): value is StablePaneId {
   return V4_UUID_RE.test(value)
+}
+
+/** Build the only supported cross-boundary pane key shape.
+ *  Why: keeping construction centralized prevents future call sites from
+ *  drifting back to renderer-local numeric pane ids or a different delimiter. */
+export function makePaneKey(tabId: string, stablePaneId: string): PaneKey {
+  return `${tabId}:${stablePaneId}` as PaneKey
 }
 
 /** Split a paneKey of the form `${tabId}:${stablePaneId}` into its parts.
  *  Returns null when the suffix is not a v4 UUID — pre-migration paneKeys
  *  carry a numeric suffix and should be dropped, not migrated, since the
  *  legacy numeric is no longer routable post-renumber. */
-export function parsePaneKey(paneKey: string): { tabId: string; stablePaneId: string } | null {
+export function parsePaneKey(
+  paneKey: string
+): { tabId: string; stablePaneId: StablePaneId } | null {
   const sepIdx = paneKey.indexOf(':')
   if (sepIdx <= 0) {
     return null

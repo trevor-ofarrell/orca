@@ -1,5 +1,6 @@
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
+import { makePaneKey } from '../../../../shared/stable-pane-id'
 
 /** Drop the row from agent-status maps and emit a non-intrusive toast for a
  *  raw paneKey. Shared by both the focus-dispatch failure branch (live key
@@ -27,5 +28,5 @@ export function dismissStaleAgentRowByKey(paneKey: string): void {
  *  pane.
  */
 export function surfaceStaleAgentRow(tabId: string, stablePaneId: string): void {
-  dismissStaleAgentRowByKey(`${tabId}:${stablePaneId}`)
+  dismissStaleAgentRowByKey(makePaneKey(tabId, stablePaneId))
 }

@@ -20,6 +20,7 @@ import {
 } from './layout-serialization'
 import { warnTerminalLifecycleAnomaly } from './terminal-lifecycle-diagnostics'
 import { registerPtySerializer, registerPtyTitleSource } from './pty-buffer-serializer'
+import { makePaneKey } from '../../../../shared/stable-pane-id'
 
 const pendingSpawnByPaneKey = new Map<string, Promise<string | null>>()
 
@@ -116,7 +117,7 @@ export function connectPanePty(
   // pane renumber. The same string crosses the IPC boundary as
   // ORCA_PANE_KEY, so external hooks route their events back to the
   // correct pane post-restore.
-  const cacheKey = `${deps.tabId}:${pane.stablePaneId}`
+  const cacheKey = makePaneKey(deps.tabId, pane.stablePaneId)
   const pendingSpawnKey = `${deps.tabId}:${paneLeafId(pane.id)}`
 
   const onExit = (ptyId: string): void => {

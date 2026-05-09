@@ -17,6 +17,7 @@ import type {
 } from '../../../../shared/types'
 import type { EventProps } from '../../../../shared/telemetry-events'
 import { resolveTerminalFontWeights } from '../../../../shared/terminal-fonts'
+import { makePaneKey } from '../../../../shared/stable-pane-id'
 import {
   buildFontFamily,
   collectLeafIdsInReplayCreationOrder,
@@ -581,7 +582,7 @@ export function useTerminalPaneLifecycle({
           // it via the retention sync.
           const stablePaneId = closedStableId
           if (stablePaneId) {
-            useAppStore.getState().dropAgentStatus(`${tabId}:${stablePaneId}`)
+            useAppStore.getState().dropAgentStatus(makePaneKey(tabId, stablePaneId))
           }
           transport.destroy?.()
           paneTransportsRef.current.delete(paneId)
@@ -695,23 +696,23 @@ export function useTerminalPaneLifecycle({
       // mapping. IPC-layer code (useIpcEvents.resolvePaneKey) and merge code
       // (mergeSnapshotAndSessions) can't reach a manager ref, so the manager
       // mirrors the binding into the store via these callbacks. paneKey is
-      // built here as ${tabId}:${stablePaneId} so all consumers can index by
-      // the same string they see in agentStatusByPaneKey, ORCA_PANE_KEY, etc.
+      // built through makePaneKey so mirror, agent-status, and ORCA_PANE_KEY
+      // consumers stay on one cross-boundary key shape.
       onStableIdRegistered: (numericId, stablePaneId) => {
-        useAppStore.getState().registerPaneKeyMapping(`${tabId}:${stablePaneId}`, numericId)
+        useAppStore.getState().registerPaneKeyMapping(makePaneKey(tabId, stablePaneId), numericId)
       },
       onStableIdAdopted: (numericId, stablePaneId, previousStableId) => {
         const store = useAppStore.getState()
         if (previousStableId && previousStableId !== stablePaneId) {
-          store.unregisterPaneKeyMapping(`${tabId}:${previousStableId}`)
+          store.unregisterPaneKeyMapping(makePaneKey(tabId, previousStableId))
         }
-        store.registerPaneKeyMapping(`${tabId}:${stablePaneId}`, numericId)
+        store.registerPaneKeyMapping(makePaneKey(tabId, stablePaneId), numericId)
       },
       onStableIdReleased: (_numericId, stablePaneId) => {
         if (!stablePaneId) {
           return
         }
-        useAppStore.getState().unregisterPaneKeyMapping(`${tabId}:${stablePaneId}`)
+        useAppStore.getState().unregisterPaneKeyMapping(makePaneKey(tabId, stablePaneId))
       }
     })
 

@@ -129,12 +129,19 @@ function makeFakeElement(): HTMLElement {
     style: {} as Record<string, string>,
     appendChild: (child: unknown) => {
       children.push(child)
+      if (child && typeof child === 'object') {
+        ;(child as { parentElement?: HTMLElement | null }).parentElement =
+          element as unknown as HTMLElement
+      }
       return child
     },
     removeChild: (child: unknown) => {
       const idx = children.indexOf(child)
       if (idx !== -1) {
         children.splice(idx, 1)
+      }
+      if (child && typeof child === 'object') {
+        ;(child as { parentElement?: HTMLElement | null }).parentElement = null
       }
       return child
     },
@@ -174,6 +181,38 @@ describe('PaneManager — stablePaneId', () => {
       ids.add(pane.stablePaneId)
     }
     expect(ids.size).toBe(4)
+  })
+
+  it('keeps existing UUIDs stable when splitting a pane and mints one for the new pane', () => {
+    const mgr = new PaneManager(makeFakeElement(), {})
+    const first = mgr.createInitialPane({ focus: false })
+    const firstStableBeforeSplit = first.stablePaneId
+
+    const second = mgr.splitPane(first.id, 'vertical')
+
+    expect(second).not.toBeNull()
+    expect(mgr.getStablePaneId(first.id)).toBe(firstStableBeforeSplit)
+    expect(mgr.getNumericIdForStable(firstStableBeforeSplit)).toBe(first.id)
+    expect(second?.stablePaneId).not.toBe(firstStableBeforeSplit)
+    expect(mgr.getNumericIdForStable(second!.stablePaneId)).toBe(second!.id)
+  })
+
+  it('keeps UUID mappings unchanged when moving panes', () => {
+    const mgr = new PaneManager(makeFakeElement(), {})
+    const first = mgr.createInitialPane({ focus: false })
+    const second = mgr.splitPane(first.id, 'vertical')
+    if (!second) {
+      throw new Error('expected splitPane to create a pane')
+    }
+    const stableBeforeMove = Array.from(mgr.getStablePaneIdMap().entries())
+
+    mgr.movePane(second.id, first.id, 'left')
+
+    expect(Array.from(mgr.getStablePaneIdMap().entries())).toEqual(stableBeforeMove)
+    for (const [numericId, stablePaneId] of stableBeforeMove) {
+      expect(mgr.getStablePaneId(numericId)).toBe(stablePaneId)
+      expect(mgr.getNumericIdForStable(stablePaneId)).toBe(numericId)
+    }
   })
 
   it('adoptStablePaneId rebinds the snapshot UUID and drops the previous mapping', () => {

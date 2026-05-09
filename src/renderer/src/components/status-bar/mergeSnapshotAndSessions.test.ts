@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MemorySnapshot, TerminalTab, WorktreeMemory } from '../../../../shared/types'
+import { makePaneKey } from '../../../../shared/stable-pane-id'
 import {
   mergeSnapshotAndSessions,
   UNATTRIBUTED_REPO_ID,
@@ -159,6 +160,32 @@ describe('mergeSnapshotAndSessions', () => {
     expect(out[0].worktrees[0].worktreeId).toBe('orca::/correct/path')
     expect(out[0].worktrees[0].sessions[0].tabId).toBe(tabId)
     expect(out[0].worktrees[0].sessions[0].bound).toBe(true)
+  })
+
+  it('uses the paneKey mirror to label snapshot sessions from pane-level titles', () => {
+    const stablePaneId = '11111111-1111-4111-8111-111111111111'
+    const paneKey = makePaneKey('tab-1', stablePaneId)
+    const wt: WorktreeMemory = {
+      worktreeId: 'orca::/Users/me/Triton',
+      worktreeName: 'Triton',
+      repoId: 'orca',
+      repoName: 'ORCA',
+      cpu: 0.1,
+      memory: 50_000_000,
+      history: [],
+      sessions: [{ sessionId: 'pty-1', paneKey, pid: 999, cpu: 0.1, memory: 50_000_000 }]
+    }
+    const ctx = baseCtx({
+      tabsByWorktree: { 'orca::/Users/me/Triton': [makeTab('tab-1', 'Terminal 1')] },
+      runtimePaneTitlesByTabId: { 'tab-1': { 7: 'Claude Code' } },
+      // Why: paneKey carries the stable UUID, while runtimePaneTitlesByTabId
+      // intentionally stays keyed by renderer-local numeric pane id.
+      numericPaneIdByPaneKey: { [paneKey]: 7 }
+    })
+
+    const out = mergeSnapshotAndSessions(makeSnapshot([wt]), [], ctx)
+
+    expect(out[0].worktrees[0].sessions[0].label).toBe('Claude Code')
   })
 
   it('repo aggregate excludes remote children but flags hasRemoteChildren', () => {
