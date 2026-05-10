@@ -59,12 +59,12 @@ export class CodexRuntimeHomeService {
 
   prepareForCodexLaunch(): string {
     this.syncForCurrentSelection()
-    return this.getPreparedCodexHomePath()
+    return this.getRuntimeHomePath()
   }
 
   prepareForRateLimitFetch(): string {
     this.syncForCurrentSelection()
-    return this.getPreparedCodexHomePath()
+    return this.getRuntimeHomePath()
   }
 
   syncForCurrentSelection(): void {
@@ -218,22 +218,6 @@ export class CodexRuntimeHomeService {
       return null
     }
     return accounts.find((account) => account.id === activeAccountId) ?? null
-  }
-
-  private getPreparedCodexHomePath(): string {
-    const settings = this.store.getSettings()
-    const activeAccount = this.getActiveAccount(
-      settings.codexManagedAccounts,
-      settings.activeCodexManagedAccountId
-    )
-    if (!activeAccount) {
-      return this.getRuntimeHomePath()
-    }
-    // Why: live Codex processes mutate CODEX_HOME/auth.json during OAuth
-    // refresh. Managed sessions must run from their account-owned home so old
-    // PTYs on account B cannot race a newly launched account A process through
-    // the shared ~/.codex runtime file.
-    return activeAccount.managedHomePath
   }
 
   private runtimeAuthMatchesAccount(
