@@ -252,7 +252,9 @@ const api = {
     // src/renderer/src/lib/keyboard-layout/input-source-id.ts, issue #1205).
     // Returns null on non-Darwin or when the defaults read fails.
     getKeyboardInputSourceId: (): Promise<string | null> =>
-      ipcRenderer.invoke('app:getKeyboardInputSourceId')
+      ipcRenderer.invoke('app:getKeyboardInputSourceId'),
+    setUnreadDockBadgeCount: (count: number): Promise<void> =>
+      ipcRenderer.invoke('app:setUnreadDockBadgeCount', count)
   },
 
   wsl: {
@@ -675,6 +677,7 @@ const api = {
       repoPath: string
       number: number
       body: string
+      type?: 'issue' | 'pr'
     }): Promise<GitHubCommentResult> => ipcRenderer.invoke('gh:addIssueComment', args),
 
     addPRReviewCommentReply: (args: {
@@ -702,6 +705,21 @@ const api = {
 
     listAssignableUsers: (args: { repoPath: string }): Promise<GitHubAssignableUser[]> =>
       ipcRenderer.invoke('gh:listAssignableUsers', args),
+
+    // Why: every renderer subscribes to local mutation broadcasts so each
+    // window's work-item-details cache invalidates the affected entry. The
+    // event fires after a successful mutation in any window — see
+    // src/main/ipc/github.ts broadcastWorkItemMutated.
+    onWorkItemMutated: (
+      callback: (payload: { repoPath: string; type: 'issue' | 'pr'; number: number }) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: { repoPath: string; type: 'issue' | 'pr'; number: number }
+      ): void => callback(payload)
+      ipcRenderer.on('gh:workItemMutated', listener)
+      return () => ipcRenderer.removeListener('gh:workItemMutated', listener)
+    },
 
     checkOrcaStarred: (): Promise<boolean | null> => ipcRenderer.invoke('gh:checkOrcaStarred'),
     starOrca: (): Promise<boolean> => ipcRenderer.invoke('gh:starOrca'),

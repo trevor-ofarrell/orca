@@ -51,6 +51,7 @@ import { cursorHookService } from './cursor/hook-service'
 import { getPtyIdForPaneKey, registerPaneKeyTeardownListener, getLocalPtyProvider } from './ipc/pty'
 import { AgentBrowserBridge } from './browser/agent-browser-bridge'
 import { browserManager } from './browser/browser-manager'
+import { setUnreadDockBadgeCount } from './dock/unread-badge'
 
 let mainWindow: BrowserWindow | null = null
 /** Whether a manual app.quit() (Cmd+Q, etc.) is in progress. Shared with the
@@ -549,7 +550,7 @@ app.whenReady().then(async () => {
       const ui = store?.getUI()
       return {
         showTasksButton: settings?.showTasksButton !== false,
-        showTitlebarAgentActivity: settings?.showTitlebarAgentActivity !== false,
+        showTitlebarAppName: settings?.showTitlebarAppName !== false,
         statusBarVisible: ui?.statusBarVisible !== false
       }
     }
@@ -659,6 +660,7 @@ app.on('will-quit', (e) => {
   // so without this ordering, running agents would produce orphaned
   // agent_start events with no matching stops.
   starNag?.stop()
+  setUnreadDockBadgeCount(0)
   agentHookServer.stop()
   stats?.flush()
   // Why: agent-browser daemon processes would otherwise linger after Orca quits,

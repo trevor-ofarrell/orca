@@ -1296,7 +1296,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
               ...(effectivePresetId ? { presetId: effectivePresetId } : {})
             }
           : undefined,
-        telemetrySource
+        telemetrySource,
+        linkedWorkItem?.title
       )
       const worktree = result.worktree
 
@@ -1376,6 +1377,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     applyWorktreeMeta,
     issueCommandTemplate,
     effectiveLinkedPR,
+    linkedWorkItem?.title,
     linkedWorkItem?.url,
     normalizedSparseDirectories,
     note,
@@ -1444,7 +1446,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
                 ...(effectivePresetId ? { presetId: effectivePresetId } : {})
               }
             : undefined,
-          telemetrySource
+          telemetrySource,
+          linkedWorkItem?.title
         )
         const worktree = result.worktree
 
@@ -1496,8 +1499,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
                 agent,
                 draft: quickDraftPrompt,
                 cmdOverrides: settings?.agentCmdOverrides ?? {},
-                platform: CLIENT_PLATFORM,
-                windowsShell: settings?.terminalWindowsShell
+                platform: CLIENT_PLATFORM
               })
 
         let startupPlan: ReturnType<typeof buildAgentStartupPlan> = null
@@ -1590,7 +1592,6 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       resolvedSetupDecision,
       selectedRepo,
       settings?.agentCmdOverrides,
-      settings?.terminalWindowsShell,
       settings?.rightSidebarOpenByDefault,
       setRightSidebarOpen,
       setRightSidebarTab,

@@ -845,6 +845,10 @@ export type SparsePreset = {
 export type CreateWorktreeArgs = {
   repoId: string
   name: string
+  /** Optional user-facing label to persist separately from the git-safe
+   *  branch/path seed. Used when a workspace is created from a GitHub or
+   *  Linear artifact whose title should remain readable in the sidebar. */
+  displayName?: string
   baseBranch?: string
   setupDecision?: SetupDecision
   sparseCheckout?: CreateSparseCheckoutRequest
@@ -1145,8 +1149,8 @@ export type GlobalSettings = {
    *  until the user explicitly wants worktree-scoped in-app browsing. */
   openLinksInApp: boolean
   rightSidebarOpenByDefault: boolean
-  /** Whether to show the live agent activity count badge in the titlebar. */
-  showTitlebarAgentActivity: boolean
+  /** Whether to show the Orca app name in the titlebar. */
+  showTitlebarAppName: boolean
   /** Why: some users do not use the Tasks feature and prefer to keep the
    *  left sidebar free of its button entirely. Hiding the button here also
    *  removes it from keyboard navigation. */
