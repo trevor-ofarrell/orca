@@ -1,43 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  getExternalFileChangeRelativePath,
-  shouldRefreshParentForPossiblyNewFileUpdate
-} from './useFileExplorerWatch'
-
-describe('shouldRefreshParentForPossiblyNewFileUpdate', () => {
-  const cache = {
-    '/repo': {
-      loading: false,
-      children: [
-        {
-          name: 'existing.svg',
-          path: '/repo/existing.svg',
-          relativePath: 'existing.svg',
-          isDirectory: false,
-          depth: 0
-        }
-      ]
-    }
-  }
-
-  it('refreshes a loaded parent when an update event targets an unknown file', () => {
-    expect(
-      shouldRefreshParentForPossiblyNewFileUpdate(cache, '/repo', '/repo/too-large.svg', false)
-    ).toBe(true)
-  })
-
-  it('refreshes ambiguous remote update events even when stale cache still lists the file', () => {
-    expect(
-      shouldRefreshParentForPossiblyNewFileUpdate(cache, '/repo', '/repo/existing.svg', undefined)
-    ).toBe(true)
-  })
-
-  it('does not refresh for ordinary updates to files already listed', () => {
-    expect(
-      shouldRefreshParentForPossiblyNewFileUpdate(cache, '/repo', '/repo/existing.svg', false)
-    ).toBe(false)
-  })
-})
+import { getExternalFileChangeRelativePath } from './useFileExplorerWatch'
 
 describe('getExternalFileChangeRelativePath', () => {
   it('returns a worktree-relative file path for external file updates', () => {

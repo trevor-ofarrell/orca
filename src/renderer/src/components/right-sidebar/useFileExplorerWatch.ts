@@ -26,22 +26,6 @@ type UseFileExplorerWatchParams = {
   isNativeDragOver: boolean
 }
 
-export function shouldRefreshParentForPossiblyNewFileUpdate(
-  cache: Record<string, DirCache>,
-  parentDir: string,
-  filePath: string,
-  isDirectory: boolean | undefined
-): boolean {
-  const parent = cache[parentDir]
-  if (!parent) {
-    return false
-  }
-  if (isDirectory === undefined) {
-    return true
-  }
-  return !parent.children.some((child) => normalizeAbsolutePath(child.path) === filePath)
-}
-
 export function getExternalFileChangeRelativePath(
   worktreePath: string,
   absolutePath: string,
@@ -223,25 +207,11 @@ export function useFileExplorerWatch({
             dirsToRefresh.add(parent)
           }
         } else if (evt.kind === 'update') {
+          // Why: directory update events invalidate that directory. File-content
+          // update events are ignored in v1 (design §6.1).
           if (evt.isDirectory === true) {
             if (normalizedPath in cache) {
               dirsToRefresh.add(normalizedPath)
-            }
-          } else {
-            const parent = normalizeAbsolutePath(dirname(normalizedPath))
-            // Why: Linux/SSH watchers can report a newly-created large file as
-            // an ambiguous update-only event without isDirectory. Refresh the
-            // loaded parent for ambiguous remote updates, and for local updates
-            // only when the file is not already listed.
-            if (
-              shouldRefreshParentForPossiblyNewFileUpdate(
-                cache,
-                parent,
-                normalizedPath,
-                evt.isDirectory
-              )
-            ) {
-              dirsToRefresh.add(parent)
             }
           }
         }
