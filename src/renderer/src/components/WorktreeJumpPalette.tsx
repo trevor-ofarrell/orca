@@ -230,7 +230,14 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
   const sortedWorktrees = useMemo(
     () =>
       hasQuery
-        ? sortWorktreesSmart(visibleWorktrees, tabsByWorktree, repoMap, agentStatusByPaneKey)
+        ? sortWorktreesSmart(
+            visibleWorktrees,
+            tabsByWorktree,
+            repoMap,
+            agentStatusByPaneKey,
+            runtimePaneTitlesByTabId,
+            ptyIdsByTabId
+          )
         : switchableWorktreesForRows,
     [
       hasQuery,
@@ -238,7 +245,9 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
       switchableWorktreesForRows,
       tabsByWorktree,
       repoMap,
-      agentStatusByPaneKey
+      agentStatusByPaneKey,
+      runtimePaneTitlesByTabId,
+      ptyIdsByTabId
     ]
   )
 
@@ -249,8 +258,22 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
     // tab on the default-branch worktree before toggling hide-on should still
     // be able to Cmd+J back to it — the setting hides the *workspace row*,
     // not the browser tabs that live inside it.
-    return sortWorktreesSmart(allWorktrees, tabsByWorktree, repoMap, agentStatusByPaneKey)
-  }, [allWorktrees, tabsByWorktree, repoMap, agentStatusByPaneKey])
+    return sortWorktreesSmart(
+      allWorktrees,
+      tabsByWorktree,
+      repoMap,
+      agentStatusByPaneKey,
+      runtimePaneTitlesByTabId,
+      ptyIdsByTabId
+    )
+  }, [
+    allWorktrees,
+    tabsByWorktree,
+    repoMap,
+    agentStatusByPaneKey,
+    runtimePaneTitlesByTabId,
+    ptyIdsByTabId
+  ])
 
   // Why: browser rows need worktree lookups for repo badge colors, and browser
   // search intentionally includes archived worktrees. This map must cover all

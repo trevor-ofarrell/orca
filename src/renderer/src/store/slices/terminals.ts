@@ -728,14 +728,24 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
   setRuntimePaneTitle: (tabId, paneId, title) => {
     set((s) => {
       const currentByPane = s.runtimePaneTitlesByTabId[tabId] ?? {}
-      if (currentByPane[paneId] === title) {
+      const prevTitle = currentByPane[paneId]
+      if (prevTitle === title) {
         return s
       }
+      // Why: smart sort's title-heuristic fallback (Edge case 9) reads
+      // runtimePaneTitlesByTabId. A hookless agent transitioning from
+      // 'working' → 'permission' via a title change must trigger a re-sort,
+      // otherwise the worktree stays in its old class until some unrelated
+      // event fires. Bumping only on classification change keeps incidental
+      // title noise (spinner frame, prompt suffix) from churning the sidebar.
+      const classificationChanged =
+        detectAgentStatusFromTitle(prevTitle ?? '') !== detectAgentStatusFromTitle(title)
       return {
         runtimePaneTitlesByTabId: {
           ...s.runtimePaneTitlesByTabId,
           [tabId]: { ...currentByPane, [paneId]: title }
-        }
+        },
+        ...(classificationChanged ? { sortEpoch: s.sortEpoch + 1 } : {})
       }
     })
   },
@@ -746,6 +756,7 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
       if (!currentByPane || !(paneId in currentByPane)) {
         return s
       }
+      const prevTitle = currentByPane[paneId]
       const nextByPane = { ...currentByPane }
       delete nextByPane[paneId]
 
@@ -756,7 +767,14 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
         delete next[tabId]
       }
 
-      return { runtimePaneTitlesByTabId: next }
+      // Why: clearing a 'working'/'permission'-classified title back to none
+      // changes the title-heuristic verdict for that pane, so the smart sort
+      // needs a re-sort. See setRuntimePaneTitle for the rationale.
+      const hadClassification = detectAgentStatusFromTitle(prevTitle ?? '') !== null
+      return {
+        runtimePaneTitlesByTabId: next,
+        ...(hadClassification ? { sortEpoch: s.sortEpoch + 1 } : {})
+      }
     })
   },
 

@@ -41,23 +41,23 @@ export function effectiveRecentActivity(worktree: Worktree, now: number): number
  *
  * Smart mode requires `attentionByWorktree` — a per-worktree class +
  * timestamp map built once before sorting (see `buildAttentionByWorktree`).
- * Without it, every worktree collapses to Class 4 (idle) and the comparator
- * silently degrades to recent-activity ordering, so callers MUST thread the
- * map for smart mode.
+ * Why non-optional: a forgotten caller would silently regress every worktree
+ * to Class 4 (idle) and degrade the comparator to recent-activity ordering;
+ * making the param required surfaces the omission as a typecheck error.
  */
 export function buildWorktreeComparator(
   sortBy: SortBy,
   repoMap: Map<string, Repo>,
-  now: number = Date.now(),
-  attentionByWorktree: Map<string, WorktreeAttention> | null = null
+  now: number,
+  attentionByWorktree: Map<string, WorktreeAttention>
 ): (a: Worktree, b: Worktree) => number {
   return (a, b) => {
     switch (sortBy) {
       case 'name':
         return a.displayName.localeCompare(b.displayName)
       case 'smart': {
-        const aw = attentionByWorktree?.get(a.id) ?? IDLE
-        const bw = attentionByWorktree?.get(b.id) ?? IDLE
+        const aw = attentionByWorktree.get(a.id) ?? IDLE
+        const bw = attentionByWorktree.get(b.id) ?? IDLE
         return (
           // Why: 1 < 2 < 3 < 4 — lower class outranks higher.
           aw.cls - bw.cls ||
@@ -108,15 +108,19 @@ export function buildWorktreeComparator(
  * Both the palette and `getVisibleWorktreeIds()` import this to avoid
  * duplicating the cold/warm branching logic.
  *
- * `agentStatusByPaneKey` is required: the comparator depends on it for class
- * resolution, and a forgotten caller would silently regress every worktree to
- * Class 4.
+ * `agentStatusByPaneKey` carries the primary signal; `runtimePaneTitlesByTabId`
+ * and `ptyIdsByTabId` enable the title-heuristic fallback for hookless agents
+ * (Edge case 9 in the design doc). Why all three are non-optional: a forgotten
+ * caller would silently regress every worktree to Class 4 or quietly disable
+ * the hookless-fallback path.
  */
 export function sortWorktreesSmart(
   worktrees: Worktree[],
   tabsByWorktree: Record<string, TerminalTab[]>,
   repoMap: Map<string, Repo>,
-  agentStatusByPaneKey: Record<string, AgentStatusEntry>
+  agentStatusByPaneKey: Record<string, AgentStatusEntry>,
+  runtimePaneTitlesByTabId: Record<string, Record<number, string>>,
+  ptyIdsByTabId: Record<string, string[]>
 ): Worktree[] {
   const hasAnyLivePty = Object.values(tabsByWorktree)
     .flat()
@@ -135,6 +139,8 @@ export function sortWorktreesSmart(
     worktrees,
     tabsByWorktree,
     agentStatusByPaneKey,
+    runtimePaneTitlesByTabId,
+    ptyIdsByTabId,
     now
   )
 

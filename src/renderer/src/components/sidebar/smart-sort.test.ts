@@ -87,6 +87,16 @@ function makeHistory(
   return { state, prompt: '', startedAt, interrupted: interrupted || undefined }
 }
 
+function ptyMapForTabs(tabsByWorktree: Record<string, TerminalTab[]>): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const tabs of Object.values(tabsByWorktree)) {
+    for (const tab of tabs) {
+      out[tab.id] = ['pty-1']
+    }
+  }
+  return out
+}
+
 /**
  * Sort helper: builds the attention map and runs the smart comparator. Mirrors
  * what callers do in production (visible-worktrees, WorktreeList).
@@ -96,7 +106,14 @@ function sortSmart(
   tabsByWorktree: Record<string, TerminalTab[]>,
   agentStatusByPaneKey: Record<string, AgentStatusEntry>
 ): Worktree[] {
-  const attention = buildAttentionByWorktree(worktrees, tabsByWorktree, agentStatusByPaneKey, NOW)
+  const attention = buildAttentionByWorktree(
+    worktrees,
+    tabsByWorktree,
+    agentStatusByPaneKey,
+    {},
+    ptyMapForTabs(tabsByWorktree),
+    NOW
+  )
   return [...worktrees].sort(buildWorktreeComparator('smart', repoMap, NOW, attention))
 }
 
@@ -429,7 +446,7 @@ describe('sortWorktreesSmart — cold start fallback', () => {
     const a = makeWorktree({ id: 'a', displayName: 'A', sortOrder: 1 })
     const b = makeWorktree({ id: 'b', displayName: 'B', sortOrder: 2 })
     // No tabs, no PTYs — cold start path.
-    const sorted = sortWorktreesSmart([a, b], {}, repoMap, {})
+    const sorted = sortWorktreesSmart([a, b], {}, repoMap, {}, {}, {})
     // Higher sortOrder wins on cold start.
     expect(sorted.map((w) => w.id)).toEqual(['b', 'a'])
   })
@@ -455,7 +472,14 @@ describe('sortWorktreesSmart — cold start fallback', () => {
         updatedAt: NOW - 1_000
       })
     }
-    const sorted = sortWorktreesSmart([done, blocked], tabsByWorktree, repoMap, entries)
+    const sorted = sortWorktreesSmart(
+      [done, blocked],
+      tabsByWorktree,
+      repoMap,
+      entries,
+      {},
+      ptyMapForTabs(tabsByWorktree)
+    )
     // Smart comparator wins over sortOrder because at least one PTY is live.
     expect(sorted.map((w) => w.id)).toEqual(['blocked', 'done'])
   })
@@ -491,7 +515,9 @@ describe('sortWorktreesSmart — palette caller regression', () => {
       [working, blocked],
       tabsByWorktree,
       repoMap,
-      agentStatusByPaneKey
+      agentStatusByPaneKey,
+      {},
+      ptyMapForTabs(tabsByWorktree)
     )
     expect(sorted.map((w) => w.id)).toEqual(['blocked', 'working'])
   })
@@ -511,7 +537,7 @@ describe('buildWorktreeComparator — recent (lastActivityAt)', () => {
     })
     const worktrees = [older, newer]
 
-    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW))
+    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW, new Map()))
 
     expect(worktrees.map((w) => w.id)).toEqual(['newer', 'older'])
   })
@@ -529,7 +555,7 @@ describe('buildWorktreeComparator — recent (lastActivityAt)', () => {
     })
     const worktrees = [legacy, touched]
 
-    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW))
+    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW, new Map()))
 
     expect(worktrees.map((w) => w.id)).toEqual(['touched', 'legacy'])
   })
@@ -547,7 +573,7 @@ describe('buildWorktreeComparator — recent (lastActivityAt)', () => {
     })
     const worktrees = [bravo, alpha]
 
-    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW))
+    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW, new Map()))
 
     expect(worktrees.map((w) => w.id)).toEqual(['alpha', 'bravo'])
   })
@@ -567,7 +593,7 @@ describe('buildWorktreeComparator — recent (lastActivityAt)', () => {
     })
     const worktrees = [staleHighOrder, freshActive]
 
-    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW))
+    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW, new Map()))
 
     expect(worktrees.map((w) => w.id)).toEqual(['fresh-active', 'stale-high-order'])
   })
@@ -621,7 +647,7 @@ describe('buildWorktreeComparator — recent with createdAt grace window', () =>
     })
     const worktrees = [bumpedByAmbient, newWorktree]
 
-    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW))
+    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW, new Map()))
 
     expect(worktrees.map((w) => w.id)).toEqual(['new', 'bumped'])
   })
@@ -640,7 +666,7 @@ describe('buildWorktreeComparator — recent with createdAt grace window', () =>
     })
     const worktrees = [oldCreated, freshActivity]
 
-    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW))
+    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW, new Map()))
 
     expect(worktrees.map((w) => w.id)).toEqual(['fresh-activity', 'old-created'])
   })
@@ -650,7 +676,7 @@ describe('buildWorktreeComparator — recent with createdAt grace window', () =>
     const bravo = makeWorktree({ id: 'bravo', displayName: 'Bravo', lastActivityAt: 10_000 })
     const worktrees = [alpha, bravo]
 
-    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW))
+    worktrees.sort(buildWorktreeComparator('recent', repoMap, NOW, new Map()))
 
     expect(worktrees.map((w) => w.id)).toEqual(['bravo', 'alpha'])
   })
