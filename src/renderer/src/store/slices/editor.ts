@@ -1933,6 +1933,10 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       get().endRemoteOperation()
     }
     void get().fetchUpstreamStatus(worktreeId, worktreePath, connectionId)
+    const refreshGitHubForWorktree = get().refreshGitHubForWorktree
+    if (typeof refreshGitHubForWorktree === 'function') {
+      refreshGitHubForWorktree(worktreeId)
+    }
   },
   pullBranch: async (worktreeId, worktreePath, connectionId) => {
     get().beginRemoteOperation('pull')
@@ -1945,6 +1949,10 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       get().endRemoteOperation()
     }
     void get().fetchUpstreamStatus(worktreeId, worktreePath, connectionId)
+    const refreshGitHubForWorktree = get().refreshGitHubForWorktree
+    if (typeof refreshGitHubForWorktree === 'function') {
+      refreshGitHubForWorktree(worktreeId)
+    }
   },
   syncBranch: async (worktreeId, worktreePath, connectionId, pushTarget) => {
     // Why: same shape as pushBranch / pullBranch — fire-and-forget the
@@ -1956,6 +1964,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     // user invoked Sync; the underlying push is implementation detail. The
     // outer catch must then skip toasting to avoid a double-toast.
     let pushStageToastShown = false
+    let pushed = false
     try {
       await window.api.git.fetch({ worktreePath, connectionId })
       await window.api.git.pull({ worktreePath, connectionId })
@@ -1974,6 +1983,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
             connectionId,
             pushTarget
           })
+          pushed = true
         } catch (error) {
           // Why: format under the user-facing operation (sync) rather than
           // the inner step (push) — the user clicked Sync and shouldn't see
@@ -1996,6 +2006,12 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       get().endRemoteOperation()
     }
     void get().fetchUpstreamStatus(worktreeId, worktreePath, connectionId)
+    if (pushed) {
+      const refreshGitHubForWorktree = get().refreshGitHubForWorktree
+      if (typeof refreshGitHubForWorktree === 'function') {
+        refreshGitHubForWorktree(worktreeId)
+      }
+    }
   },
   fetchBranch: async (worktreeId, worktreePath, connectionId) => {
     // Why: same shape as pushBranch / pullBranch — fire-and-forget the

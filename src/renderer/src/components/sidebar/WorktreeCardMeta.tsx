@@ -87,7 +87,7 @@ type PrSectionProps = {
   onClick: (e: React.MouseEvent) => void
 }
 
-export function PrSection({ pr, onClick: _onClick }: PrSectionProps): React.JSX.Element {
+export function PrSection({ pr, onClick }: PrSectionProps): React.JSX.Element {
   const state = pr.state
   const checksStatus = pr.checksStatus
   const hasChecks = checksStatus && checksStatus !== 'neutral'
@@ -95,14 +95,17 @@ export function PrSection({ pr, onClick: _onClick }: PrSectionProps): React.JSX.
     <HoverCard openDelay={300}>
       <HoverCardTrigger asChild>
         <a
-          href={pr.url}
+          href={pr.url ?? '#'}
           target="_blank"
           rel="noreferrer"
           className="flex items-center gap-1.5 min-w-0 cursor-pointer group/meta -mx-1.5 px-1.5 py-0.5 rounded transition-colors hover:bg-background/40"
           onClick={(e) => {
             if (pr.url) {
               e.stopPropagation()
+              return
             }
+            e.preventDefault()
+            onClick(e)
           }}
         >
           <PullRequestIcon
