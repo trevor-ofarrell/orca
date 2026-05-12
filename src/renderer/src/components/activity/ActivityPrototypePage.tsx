@@ -7,21 +7,19 @@ import {
   Bell,
   BellDot,
   BellOff,
-  GitBranch,
   MessageSquareText,
   Search,
-  Settings
+  Settings,
+  TerminalSquare
 } from 'lucide-react'
 
 import { AgentIcon } from '@/lib/agent-catalog'
 import { agentTypeToIconAgent, formatAgentTypeLabel } from '@/lib/agent-status'
 import { activateTabAndFocusPane } from '@/lib/activate-tab-and-focus-pane'
-import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { useAppStore } from '@/store'
 import type { RetainedAgentEntry } from '@/store/slices/agent-status'
 import { getRepoMapFromState, getWorktreeMapFromState } from '@/store/selectors'
 import { useSidebarResize } from '@/hooks/useSidebarResize'
-import { AgentStateDot, agentStateLabel, type AgentDotState } from '@/components/AgentStateDot'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -36,6 +34,7 @@ import { Input } from '@/components/ui/input'
 import { Toggle } from '@/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { ACTIVITY_TERMINAL_PORTAL_TARGET_ID } from './activity-terminal-portal'
 import type { Repo, TerminalTab, Worktree } from '../../../../shared/types'
 import type {
   AgentStatusEntry,
@@ -99,13 +98,6 @@ function formatRelativeTime(timestamp: number): string {
   }
   const diffDays = Math.round(diffHours / 24)
   return relativeTimeFormatter.format(diffDays, 'day')
-}
-
-function asDotState(state: AgentStatusState): AgentDotState {
-  if (state === 'blocked' || state === 'waiting' || state === 'done') {
-    return state
-  }
-  return 'idle'
 }
 
 function paneIdFromPaneKey(paneKey: string): number | null {
@@ -302,108 +294,6 @@ function EventRepoBadge({ repo }: { repo: Repo | null }): React.JSX.Element | nu
   )
 }
 
-function ActivityRow({
-  event,
-  density,
-  onMarkRead
-}: {
-  event: ActivityEvent
-  density: ActivityDensity
-  onMarkRead: (event: ActivityEvent) => void
-}): React.JSX.Element {
-  const compact = density === 'compact'
-  const dotState = asDotState(event.state)
-
-  // Why (row click = navigate + ack): the inline "Jump to agent" button only
-  // rendered when agentAlive (so retained-done rows had no jump affordance at
-  // all) and in compact mode it was hover-only. Users naturally click anywhere
-  // on the row expecting it to navigate, so the row itself takes over the
-  // navigate role and subsumes the button. Per the design doc we drop the
-  // agentAlive gate entirely (option 1): activateAndRevealWorktree is safe
-  // unconditionally and activateTabAndFocusPane silently no-ops on a missing
-  // tab id, so a stale-tab click is just a soft no-op.
-  const openAgent = (clickEvent?: React.MouseEvent | React.KeyboardEvent): void => {
-    clickEvent?.stopPropagation()
-    onMarkRead(event)
-    activateAndRevealWorktree(event.worktree.id)
-    activateTabAndFocusPane(event.tab.id, paneIdFromPaneKey(event.entry.paneKey))
-  }
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={openAgent}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          openAgent(e)
-        }
-      }}
-      className={cn(
-        'group relative grid grid-cols-[2rem_minmax(0,1fr)_7.25rem] gap-3 border-b border-border px-3 cursor-pointer transition-colors hover:bg-accent/40',
-        compact ? 'py-2' : 'py-3.5',
-        event.unread && 'bg-accent/20'
-      )}
-    >
-      {/* Why (left-edge bar): matches ThreadRow's unread treatment so the two
-          surfaces share one unread vocabulary. A row-level marker keeps the
-          state-icon column uncrowded — earlier attempts (mini-dot, bell glyph)
-          competed with the AgentStateDot. */}
-      {event.unread ? (
-        <span
-          className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-full bg-primary"
-          aria-hidden
-        />
-      ) : null}
-      <div className="flex items-center justify-center pt-0.5">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex">
-              <AgentStateDot state={dotState} size="lg" />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={4}>
-            {event.entry.interrupted ? 'Interrupted' : agentStateLabel(dotState)}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className={cn('truncate text-sm', event.unread ? 'font-semibold' : 'font-medium')}>
-            {agentTitle(event)}
-          </span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex shrink-0">
-                <AgentIcon agent={agentTypeToIconAgent(event.agentType)} size={14} />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={4}>
-              {formatAgentTypeLabel(event.agentType)}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-        <div className="mt-0.5 line-clamp-3 break-words whitespace-pre-wrap text-sm text-muted-foreground">
-          {agentSummary(event)}
-        </div>
-        <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-          <span className="inline-flex min-w-0 items-center gap-1">
-            <GitBranch className="size-3 shrink-0" />
-            <span className="truncate">{event.worktree.displayName}</span>
-          </span>
-          <span>{agentMeta(event)}</span>
-        </div>
-      </div>
-
-      <div className="flex flex-col items-end gap-2 pt-0.5">
-        <EventTime timestamp={event.timestamp} />
-      </div>
-    </div>
-  )
-}
-
 function ThreadRow({
   thread,
   density,
@@ -444,13 +334,17 @@ function ThreadRow({
         <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-full bg-primary" />
       ) : null}
       <span className="min-w-0">
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="inline-flex shrink-0">
+        <span className="flex min-w-0 items-start gap-2">
+          <span className="inline-flex shrink-0 pt-[3px]">
             <AgentIcon agent={agentTypeToIconAgent(thread.agentType)} size={14} />
           </span>
+          {/* Why (line-clamp-2 + smaller size): prompts can be long; clamping
+              to two lines lets users read more of the prompt while keeping
+              rows scannable. text-[13px] tightens the leading slightly so two
+              clamped lines don't dominate the row vertically. */}
           <span
             className={cn(
-              'truncate text-sm',
+              'line-clamp-2 break-words text-[13px] leading-snug',
               thread.unread ? 'font-semibold text-foreground' : 'font-medium text-foreground'
             )}
           >
@@ -566,17 +460,14 @@ export default function ActivityPrototypePage(): React.JSX.Element {
   }, [allThreads, readFilter, query])
 
   useEffect(() => {
-    if (visibleThreads.length === 0) {
+    if (selectedPaneKey && !allThreads.some((thread) => thread.paneKey === selectedPaneKey)) {
       setSelectedPaneKey(null)
-      return
     }
-    if (!selectedPaneKey || !visibleThreads.some((thread) => thread.paneKey === selectedPaneKey)) {
-      setSelectedPaneKey(visibleThreads[0].paneKey)
-    }
-  }, [selectedPaneKey, visibleThreads])
+  }, [allThreads, selectedPaneKey])
 
-  const selectedThread =
-    visibleThreads.find((thread) => thread.paneKey === selectedPaneKey) ?? visibleThreads[0] ?? null
+  const selectedThread = selectedPaneKey
+    ? (allThreads.find((thread) => thread.paneKey === selectedPaneKey) ?? null)
+    : null
 
   const markThreadRead = (thread: AgentPaneThread): void => {
     storeData.acknowledgeAgents([thread.paneKey])
@@ -586,9 +477,22 @@ export default function ActivityPrototypePage(): React.JSX.Element {
     storeData.unacknowledgeAgents([thread.paneKey])
   }
 
+  const activateThreadTerminal = (thread: AgentPaneThread): void => {
+    const state = useAppStore.getState()
+    if (state.activeRepoId !== thread.worktree.repoId) {
+      state.setActiveRepo(thread.worktree.repoId)
+    }
+    if (state.activeWorktreeId !== thread.worktree.id) {
+      state.setActiveWorktree(thread.worktree.id)
+    }
+    state.setActiveTabType('terminal')
+    activateTabAndFocusPane(thread.latestEvent.tab.id, paneIdFromPaneKey(thread.paneKey))
+  }
+
   const selectThread = (thread: AgentPaneThread): void => {
     setSelectedPaneKey(thread.paneKey)
     markThreadRead(thread)
+    activateThreadTerminal(thread)
   }
 
   const toggleThreadRead = (thread: AgentPaneThread): void => {
@@ -597,10 +501,6 @@ export default function ActivityPrototypePage(): React.JSX.Element {
       return
     }
     markThreadUnread(thread)
-  }
-
-  const markRead = (event: ActivityEvent): void => {
-    storeData.acknowledgeAgents([event.entry.paneKey])
   }
 
   // Why (page padding): drop top + horizontal padding so the page extends to
@@ -722,7 +622,7 @@ export default function ActivityPrototypePage(): React.JSX.Element {
                     <span className="inline-flex shrink-0">
                       <AgentIcon agent={agentTypeToIconAgent(selectedThread.agentType)} size={16} />
                     </span>
-                    <h2 className="truncate text-base font-semibold">{selectedThread.paneTitle}</h2>
+                    <h2 className="truncate text-sm font-semibold">{selectedThread.paneTitle}</h2>
                     <EventRepoBadge repo={selectedThread.repo} />
                   </div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">
@@ -730,21 +630,28 @@ export default function ActivityPrototypePage(): React.JSX.Element {
                   </div>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-auto scrollbar-sleek">
-                {selectedThread.events.map((event) => (
-                  <ActivityRow
-                    key={event.id}
-                    event={event}
-                    density="comfortable"
-                    onMarkRead={markRead}
-                  />
-                ))}
-              </div>
+              {/* Why: Terminal stays mounted in the hidden workspace tree while
+                  Activity is open. This target lets that existing TerminalPane
+                  move here instead of creating a second PTY/xterm owner. */}
+              <div
+                id={ACTIVITY_TERMINAL_PORTAL_TARGET_ID}
+                className="relative min-h-0 flex-1 overflow-hidden bg-editor-surface"
+                data-activity-terminal-tab-id={selectedThread.latestEvent.tab.id}
+              />
             </div>
           ) : (
             <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-              <MessageSquareText className="size-7" />
-              No activity yet.
+              {visibleThreads.length === 0 ? (
+                <>
+                  <MessageSquareText className="size-7" />
+                  No activity yet.
+                </>
+              ) : (
+                <>
+                  <TerminalSquare className="size-7" />
+                  Select an agent to open its terminal.
+                </>
+              )}
             </div>
           )}
         </section>
