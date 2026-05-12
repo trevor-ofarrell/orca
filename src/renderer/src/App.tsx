@@ -34,7 +34,8 @@ import {
 } from './runtime/sync-runtime-graph'
 import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
 import { registerUpdaterBeforeUnloadBypass } from './lib/updater-beforeunload'
-import { buildWorkspaceSessionPayload, SESSION_RELEVANT_FIELDS } from './lib/workspace-session'
+import { buildWorkspaceSessionPayload } from './lib/workspace-session'
+import { createSessionWriteSubscriber } from './lib/session-write-subscriber'
 import { countWorkingAgents, getWorkingAgentsPerWorktree } from './lib/agent-status'
 import { activateAndRevealWorktree } from './lib/worktree-activation'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -384,52 +385,10 @@ function App(): React.JSX.Element {
   // Using a Zustand subscribe() outside React removes ~15 subscriptions from
   // App's render cycle, eliminating re-renders on every tab/file/browser change.
   useEffect(() => {
-    let timer: number | null = null
-    // Why: the subscriber fires on every store update (agent status, usage
-    // refreshes, runtime title ticks, …). Without this gate each fire reset
-    // the debounce, and when it finally expired buildWorkspaceSessionPayload
-    // crossed 70-110ms with many tabs, tripping setTimeout violations. Compare
-    // each session-feeding field by reference against the prior snapshot and
-    // skip both the timer reset and the rebuild when none changed. `null`
-    // sentinel guarantees the very first fire always proceeds.
-    let prev: Record<string, unknown> | null = null
-    const unsub = useAppStore.subscribe((state) => {
-      if (!state.workspaceSessionReady) {
-        return
-      }
-      let changed = false
-      if (prev === null) {
-        changed = true
-      } else {
-        for (const key of SESSION_RELEVANT_FIELDS) {
-          if (prev[key] !== state[key]) {
-            changed = true
-            break
-          }
-        }
-      }
-      if (!changed) {
-        return
-      }
-      const next: Record<string, unknown> = {}
-      for (const key of SESSION_RELEVANT_FIELDS) {
-        next[key] = state[key]
-      }
-      prev = next
-      if (timer) {
-        window.clearTimeout(timer)
-      }
-      timer = window.setTimeout(() => {
-        timer = null
-        void window.api.session.set(buildWorkspaceSessionPayload(state))
-      }, 150)
+    return createSessionWriteSubscriber({
+      store: useAppStore,
+      persist: (payload) => void window.api.session.set(payload)
     })
-    return () => {
-      unsub()
-      if (timer) {
-        window.clearTimeout(timer)
-      }
-    }
   }, [])
 
   // On shutdown, capture terminal scrollback buffers and flush to disk.
