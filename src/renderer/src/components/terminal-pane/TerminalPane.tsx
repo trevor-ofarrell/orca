@@ -15,7 +15,11 @@ import type { PtyTransport } from './pty-transport'
 import { fitPanes, isWindowsUserAgent, shellEscapePath } from './pane-helpers'
 import { getConnectionId } from '@/lib/connection-context'
 import { EMPTY_LAYOUT, paneLeafId, serializeTerminalLayout } from './layout-serialization'
-import { createExpandCollapseActions } from './expand-collapse'
+import {
+  applyExpandedLayoutTo,
+  createExpandCollapseActions,
+  restoreExpandedLayoutFrom
+} from './expand-collapse'
 import { useTerminalKeyboardShortcuts, type SearchState } from './keyboard-handlers'
 import type { MacOptionAsAlt } from './terminal-shortcut-policy'
 import { useEffectiveMacOptionAsAlt } from '@/lib/keyboard-layout/use-effective-mac-option-as-alt'
@@ -50,6 +54,12 @@ type TerminalPaneProps = {
   cwd?: string
   isActive: boolean
   isVisible?: boolean
+  // Why: when set (Activity portal), this pane visually isolates the given
+  // split pane so only that leaf is shown. Implemented as a transient layout
+  // override (separate snapshot ref) — does NOT touch expandedPaneId state
+  // or persist to the layout snapshot, so returning to the workspace shows
+  // the original split layout unchanged.
+  isolatedPaneId?: number | null
   onPtyExit: (ptyId: string) => void
   onCloseTab: () => void
 }
@@ -60,6 +70,7 @@ export default function TerminalPane({
   cwd,
   isActive,
   isVisible = true,
+  isolatedPaneId = null,
   onPtyExit,
   onCloseTab
 }: TerminalPaneProps): React.JSX.Element {
@@ -68,6 +79,14 @@ export default function TerminalPane({
   const paneFontSizesRef = useRef<Map<number, number>>(new Map())
   const expandedPaneIdRef = useRef<number | null>(null)
   const expandedStyleSnapshotRef = useRef<Map<HTMLElement, { display: string; flex: string }>>(
+    new Map()
+  )
+  // Why (separate from expandedStyleSnapshotRef): Activity isolation is a
+  // transient view override that must not collide with the user-facing
+  // expanded-pane state or the layout snapshot. Keeping its own snapshot
+  // map means applyExpandedLayoutTo's internal restore (which targets the
+  // ref it was passed) only clears Activity's overlay, not the user's.
+  const activityIsolationSnapshotRef = useRef<Map<HTMLElement, { display: string; flex: string }>>(
     new Map()
   )
   const paneTransportsRef = useRef<Map<number, PtyTransport>>(new Map())
@@ -99,7 +118,7 @@ export default function TerminalPane({
   // read — the portal map at line ~914 calls `managerRef.current?.getPanes()`
   // imperatively, so `setPaneCount` is used only as a render-trigger side
   // effect to force that map to re-run when a pane is split or closed.
-  const [, setPaneCount] = useState<number>(0)
+  const [paneCount, setPaneCount] = useState<number>(0)
   const [searchOpen, setSearchOpen] = useState(false)
   const searchOpenRef = useRef(false)
   searchOpenRef.current = searchOpen
@@ -509,6 +528,56 @@ export default function TerminalPane({
     setRenamingPaneId,
     setPaneCount
   })
+
+  // Why (Activity-only pane isolation): when this TerminalPane is being
+  // portaled into the Activity page for a specific agent pane, hide the
+  // other split siblings so the user only sees that agent's pane. Uses
+  // applyExpandedLayoutTo with a separate snapshot ref so the override is
+  // independent of the user-facing expanded-pane state and the persisted
+  // layout snapshot — closing Activity restores the original split layout.
+  // useLayoutEffect: layout style writes must land before paint to avoid
+  // a flash of all panes. paneCount is in deps so the effect re-applies
+  // after splits/closes change the manager's pane list.
+  useLayoutEffect(() => {
+    const snapshots = activityIsolationSnapshotRef.current
+    if (isolatedPaneId === null) {
+      restoreExpandedLayoutFrom(snapshots)
+      return
+    }
+    const applied = applyExpandedLayoutTo(isolatedPaneId, {
+      managerRef,
+      containerRef,
+      expandedStyleSnapshotRef: activityIsolationSnapshotRef
+    })
+    if (!applied) {
+      restoreExpandedLayoutFrom(snapshots)
+      return
+    }
+    // Why: refit on rAF so xterm measures the post-layout DOM, not the
+    // pre-toggle one. Mirrors expand-collapse.refreshPaneSizes.
+    const frame = requestAnimationFrame(() => {
+      const manager = managerRef.current
+      if (!manager) {
+        return
+      }
+      for (const pane of manager.getPanes()) {
+        safeFit(pane)
+      }
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+    }
+  }, [isolatedPaneId, paneCount])
+
+  // Why: belt-and-suspenders unmount cleanup. If the component unmounts
+  // while isolation is active (e.g. tab closed mid-Activity-view), restore
+  // sibling display/flex so the captured DOM doesn't leak inline styles.
+  useEffect(() => {
+    const snapshots = activityIsolationSnapshotRef.current
+    return () => {
+      restoreExpandedLayoutFrom(snapshots)
+    }
+  }, [])
 
   const handleRestartCodexPane = useCallback(
     (paneId: number) => {
