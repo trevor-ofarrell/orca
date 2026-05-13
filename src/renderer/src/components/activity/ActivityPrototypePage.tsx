@@ -13,6 +13,7 @@ import {
   TerminalSquare
 } from 'lucide-react'
 
+import { AgentStateDot, agentStateLabel } from '@/components/AgentStateDot'
 import { AgentIcon } from '@/lib/agent-catalog'
 import {
   agentTypeToIconAgent,
@@ -21,8 +22,6 @@ import {
 } from '@/lib/agent-status'
 import { activateTabAndFocusPane } from '@/lib/activate-tab-and-focus-pane'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
-import type { Status as WorktreeStatus } from '@/components/sidebar/StatusIndicator'
-import StatusIndicator from '@/components/sidebar/StatusIndicator'
 import { useAppStore } from '@/store'
 import type { RetainedAgentEntry } from '@/store/slices/agent-status'
 import { getRepoMapFromState, getWorktreeMapFromState } from '@/store/selectors'
@@ -332,21 +331,6 @@ function freshActivityLiveAgentState(
   return isExplicitAgentStatusFresh(entry, now, AGENT_STATUS_STALE_AFTER_MS) ? entry.state : null
 }
 
-function liveAgentStateLabel(state: ActivityLiveAgentState): string {
-  switch (state) {
-    case 'working':
-      return 'Working'
-    case 'blocked':
-      return 'Blocked'
-    case 'waiting':
-      return 'Waiting for input'
-  }
-}
-
-function liveAgentWorktreeStatus(state: ActivityLiveAgentState): WorktreeStatus {
-  return state === 'working' ? 'working' : 'permission'
-}
-
 // Why: per-pane cap guarantees each agent appears in the left list even when one pane has a long history.
 const EVENTS_PER_PANE_CAP = 5
 
@@ -605,23 +589,26 @@ function EventRepoBadge({ repo }: { repo: Repo | null }): React.JSX.Element | nu
   )
 }
 
-function LiveAgentStateIndicator({
-  state
-}: {
-  state: ActivityLiveAgentState | null
-}): React.JSX.Element | null {
-  if (!state) {
-    return null
+function threadAgentState(thread: AgentPaneThread): AgentStatusState {
+  return thread.currentAgentState ?? thread.latestEvent.state
+}
+
+function threadAgentStateLabel(thread: AgentPaneThread): string {
+  const state = threadAgentState(thread)
+  if (!thread.currentAgentState && state === 'done' && thread.latestEvent.entry.interrupted) {
+    return 'Interrupted'
   }
-  const label = liveAgentStateLabel(state)
+  return agentStateLabel(state)
+}
+
+function ThreadAgentStateIndicator({ thread }: { thread: AgentPaneThread }): React.JSX.Element {
+  const state = threadAgentState(thread)
+  const label = threadAgentStateLabel(thread)
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span
-          className="inline-flex size-4 shrink-0 items-center justify-center"
-          aria-label={label}
-        >
-          <StatusIndicator status={liveAgentWorktreeStatus(state)} aria-hidden="true" />
+        <span className="inline-flex size-4 shrink-0 items-center justify-center">
+          <AgentStateDot state={state} size="sm" />
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={4}>
@@ -685,9 +672,11 @@ function ThreadRow({
           full-width for the repo badge + branch name, which used to get
           truncated when the right cluster ate horizontal space. */}
       <div className="flex min-w-0 items-start gap-2">
-        <LiveAgentStateIndicator state={thread.currentAgentState} />
-        <span className="inline-flex shrink-0 pt-px">
-          <AgentIcon agent={agentTypeToIconAgent(thread.agentType)} size={14} />
+        <span className="inline-flex shrink-0 items-start gap-1">
+          <ThreadAgentStateIndicator thread={thread} />
+          <span className="inline-flex shrink-0 pt-px">
+            <AgentIcon agent={agentTypeToIconAgent(thread.agentType)} size={14} />
+          </span>
         </span>
         <span
           className={cn(
@@ -861,11 +850,9 @@ export default function ActivityPrototypePage(): React.JSX.Element {
         return true
       }
       const latest = thread.latestEvent
-      const liveState = thread.currentAgentState
-        ? liveAgentStateLabel(thread.currentAgentState)
-        : ''
+      const stateLabel = threadAgentStateLabel(thread)
       const text =
-        `${thread.paneTitle} ${thread.worktree.displayName} ${thread.repo?.displayName ?? ''} ${liveState} ${agentTitle(latest)} ${agentSummary(latest)} ${agentMeta(latest)}`.toLowerCase()
+        `${thread.paneTitle} ${thread.worktree.displayName} ${thread.repo?.displayName ?? ''} ${stateLabel} ${agentTitle(latest)} ${agentSummary(latest)} ${agentMeta(latest)}`.toLowerCase()
       return text.includes(trimmedQuery)
     })
   }, [allThreads, readFilter, query, selectedPaneKey])
@@ -1196,9 +1183,14 @@ export default function ActivityPrototypePage(): React.JSX.Element {
               <div className="flex shrink-0 items-start gap-4 border-b border-border px-4 pt-2 pb-3">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-start gap-2">
-                    <LiveAgentStateIndicator state={selectedThread.currentAgentState} />
-                    <span className="inline-flex shrink-0 pt-[3px]">
-                      <AgentIcon agent={agentTypeToIconAgent(selectedThread.agentType)} size={16} />
+                    <span className="inline-flex shrink-0 items-start gap-1">
+                      <ThreadAgentStateIndicator thread={selectedThread} />
+                      <span className="inline-flex shrink-0 pt-[3px]">
+                        <AgentIcon
+                          agent={agentTypeToIconAgent(selectedThread.agentType)}
+                          size={16}
+                        />
+                      </span>
                     </span>
                     <h2 className="line-clamp-3 break-words text-sm font-semibold leading-snug">
                       {selectedThread.paneTitle}
