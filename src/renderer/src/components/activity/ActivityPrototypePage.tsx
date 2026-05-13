@@ -1013,7 +1013,7 @@ export default function ActivityPrototypePage(): React.JSX.Element {
                   type="button"
                   variant="outline"
                   size="xs"
-                  className="shrink-0"
+                  className="shrink-0 self-center"
                   onClick={() => {
                     markThreadRead(selectedThread)
                     activateAndRevealWorktree(selectedThread.worktree.id)
