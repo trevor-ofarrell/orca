@@ -463,6 +463,7 @@ export function connectPanePty(
     // auto-replies never count as interaction.
     deps.clearTerminalTabUnread(deps.tabId)
     deps.clearWorktreeUnread(deps.worktreeId)
+    flushTerminalOutput(pane.terminal)
     transport.sendInput(data)
   })
 
