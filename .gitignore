@@ -66,7 +66,6 @@ tmp/
 design-docs/
 .context/
 .atl/
-/agent-hooks/
 
 # Local-only design/planning docs (not checked in)
 docs/*.md
