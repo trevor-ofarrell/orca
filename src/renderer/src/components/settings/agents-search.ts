@@ -1,4 +1,5 @@
 import type { SettingsSearchEntry } from './settings-search'
+import { AGENT_AWAKE_SETTING_DESCRIPTION, AGENT_AWAKE_SETTING_TITLE } from './AgentAwakeSetting'
 
 export const AGENTS_PANE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
   {
@@ -41,9 +42,19 @@ export const AGENTS_PANE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
     ]
   },
   {
-    title: 'Keep computer awake while agents are working',
-    description:
-      'Keeps this computer awake while agents are working. The display can still turn off.',
-    keywords: ['awake', 'sleep', 'power', 'agent', 'running', 'working']
+    title: AGENT_AWAKE_SETTING_TITLE,
+    description: AGENT_AWAKE_SETTING_DESCRIPTION,
+    keywords: [
+      'awake',
+      'sleep',
+      'power',
+      'agent',
+      'running',
+      'working',
+      'mobile',
+      'phone',
+      'hotspot',
+      'lid'
+    ]
   }
 ]

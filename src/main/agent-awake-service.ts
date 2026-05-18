@@ -10,7 +10,7 @@ export type AgentAwakeStatus = {
 }
 
 type PowerSaveBlocker = {
-  start: (type: 'prevent-app-suspension') => number
+  start: (type: 'prevent-app-suspension' | 'prevent-display-sleep') => number
   stop: (id: number) => void
   isStarted: (id: number) => boolean
 }
@@ -26,6 +26,7 @@ type AgentAwakeServiceOptions = {
 export class AgentAwakeService {
   private enabled = false
   private statuses: AgentAwakeStatus[] = []
+  private activeMobileConnectionCount = 0
   private blockerId: number | null = null
   private staleTimer: ReturnType<typeof setTimeout> | null = null
   private readonly blocker: PowerSaveBlocker
@@ -51,6 +52,15 @@ export class AgentAwakeService {
     this.refresh('status-change')
   }
 
+  setActiveMobileConnectionCount(count: number): void {
+    const normalized = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0
+    if (this.activeMobileConnectionCount === normalized) {
+      return
+    }
+    this.activeMobileConnectionCount = normalized
+    this.refresh('mobile-connection-change')
+  }
+
   dispose(): void {
     this.clearStaleTimer()
     this.stopBlocker('dispose')
@@ -59,7 +69,8 @@ export class AgentAwakeService {
   private refresh(reason: string): void {
     this.scheduleStaleTimer()
     const runningStatusCount = this.getEligibleRunningStatusCount()
-    const shouldBlock = this.enabled && runningStatusCount > 0
+    const shouldBlock =
+      this.enabled && (runningStatusCount > 0 || this.activeMobileConnectionCount > 0)
     if (shouldBlock) {
       this.startBlocker(reason, runningStatusCount)
     } else {

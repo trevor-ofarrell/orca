@@ -71,6 +71,73 @@ describe('AgentAwakeService', () => {
     expect(blocker.start).toHaveBeenCalledWith('prevent-app-suspension')
   })
 
+  it('starts one blocker when enabled with an active mobile connection and no agents', () => {
+    const blocker = createBlocker()
+    const service = createService(() => 1_000, blocker)
+
+    service.setEnabled(true)
+    service.setActiveMobileConnectionCount(1)
+
+    expect(blocker.start).toHaveBeenCalledTimes(1)
+    expect(blocker.start).toHaveBeenCalledWith('prevent-app-suspension')
+  })
+
+  it('does not start for active mobile connections while disabled', () => {
+    const blocker = createBlocker()
+    const service = createService(() => 1_000, blocker)
+
+    service.setActiveMobileConnectionCount(1)
+
+    expect(blocker.start).not.toHaveBeenCalled()
+  })
+
+  it('keeps one blocker while both agent and mobile reasons are active', () => {
+    const blocker = createBlocker()
+    const service = createService(() => 1_000, blocker)
+
+    service.setEnabled(true)
+    service.setStatuses([workingStatus()])
+    service.setActiveMobileConnectionCount(2)
+
+    expect(blocker.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops only after mobile and agent wake reasons are both gone', () => {
+    const blocker = createBlocker()
+    const service = createService(() => 1_000, blocker)
+
+    service.setEnabled(true)
+    service.setStatuses([workingStatus()])
+    service.setActiveMobileConnectionCount(1)
+    service.setStatuses([])
+
+    expect(blocker.stop).not.toHaveBeenCalled()
+
+    service.setActiveMobileConnectionCount(0)
+
+    expect(blocker.stop).toHaveBeenCalledWith(1)
+  })
+
+  it('normalizes invalid mobile connection counts to a non-negative integer', () => {
+    const blocker = createBlocker()
+    const service = createService(() => 1_000, blocker)
+
+    service.setEnabled(true)
+    service.setActiveMobileConnectionCount(-1)
+    service.setActiveMobileConnectionCount(Number.NaN)
+
+    expect(blocker.start).not.toHaveBeenCalled()
+
+    service.setActiveMobileConnectionCount(1.9)
+    expect(blocker.start).toHaveBeenCalledTimes(1)
+
+    service.setActiveMobileConnectionCount(1.1)
+    expect(blocker.stop).not.toHaveBeenCalled()
+
+    service.setActiveMobileConnectionCount(0.9)
+    expect(blocker.stop).toHaveBeenCalledWith(1)
+  })
+
   it('starts and stops from settings flips around an already-running status', () => {
     const blocker = createBlocker()
     const service = createService(() => 1_000, blocker)

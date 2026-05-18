@@ -145,7 +145,13 @@ function waitForWsClose(ws: WebSocket): Promise<void> {
   })
 }
 
-async function authenticateMobileWs(pairingUrl: string): Promise<WebSocket> {
+type AuthenticatedWsSession = {
+  ws: WebSocket
+  sharedKey: Uint8Array
+  deviceToken: string
+}
+
+async function authenticateWsSession(pairingUrl: string): Promise<AuthenticatedWsSession> {
   const parsed = parsePairingCode(pairingUrl)
   expect(parsed).toBeTruthy()
   const ws = await connectWs(parsed!.endpoint)
@@ -168,7 +174,11 @@ async function authenticateMobileWs(pairingUrl: string): Promise<WebSocket> {
     type: 'e2ee_authenticated'
   })
 
-  return ws
+  return { ws, sharedKey, deviceToken: parsed!.deviceToken }
+}
+
+async function authenticateMobileWs(pairingUrl: string): Promise<WebSocket> {
+  return (await authenticateWsSession(pairingUrl)).ws
 }
 
 class FakeWebSocket extends EventEmitter {
@@ -455,11 +465,13 @@ describe('OrcaRuntimeRpcServer', () => {
   it('terminates active WebSockets for a revoked mobile device', async () => {
     const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
     const runtime = new OrcaRuntimeService()
+    const onMobileConnectionCountChange = vi.fn()
     const server = new OrcaRuntimeRpcServer({
       runtime,
       userDataPath,
       enableWebSocket: true,
-      wsPort: 0
+      wsPort: 0,
+      onMobileConnectionCountChange
     })
     const disconnectSpy = vi.spyOn(runtime, 'onClientDisconnected')
 
@@ -477,16 +489,174 @@ describe('OrcaRuntimeRpcServer', () => {
       }
       const first = await authenticateMobileWs(offer.pairingUrl)
       const second = await authenticateMobileWs(offer.pairingUrl)
+      await waitFor(() => onMobileConnectionCountChange.mock.calls.length === 2)
 
       expect(server.revokeMobileDevice(offer.deviceId)).toBe(true)
       await Promise.all([waitForWsClose(first), waitForWsClose(second)])
       await waitFor(() => server['e2eeChannels'].size === 0 && server['wsConnectionIds'].size === 0)
 
       expect(disconnectSpy).toHaveBeenCalledTimes(1)
+      expect(onMobileConnectionCountChange.mock.calls).toEqual([[1], [2], [1], [0]])
     } finally {
       disconnectSpy.mockRestore()
       await server.stop()
     }
+  })
+
+  it('reports active authenticated mobile WebSocket count until the last socket closes', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
+    const runtime = new OrcaRuntimeService()
+    const onMobileConnectionCountChange = vi.fn()
+    const server = new OrcaRuntimeRpcServer({
+      runtime,
+      userDataPath,
+      enableWebSocket: true,
+      wsPort: 0,
+      onMobileConnectionCountChange
+    })
+
+    await server.start()
+
+    try {
+      const offer = server.createPairingOffer({
+        address: '127.0.0.1',
+        name: 'mobile-test',
+        scope: 'mobile'
+      })
+      expect(offer.available).toBe(true)
+      if (!offer.available) {
+        throw new Error('WebSocket pairing unavailable')
+      }
+
+      const first = await authenticateWsSession(offer.pairingUrl)
+      await waitFor(() => onMobileConnectionCountChange.mock.calls.length === 1)
+      expect(onMobileConnectionCountChange).toHaveBeenLastCalledWith(1)
+
+      const second = await authenticateWsSession(offer.pairingUrl)
+      await waitFor(() => onMobileConnectionCountChange.mock.calls.length === 2)
+      expect(onMobileConnectionCountChange).toHaveBeenLastCalledWith(2)
+
+      first.ws.send(
+        encrypt(
+          JSON.stringify({
+            id: 'status-after-auth',
+            method: 'status.get',
+            deviceToken: first.deviceToken
+          }),
+          first.sharedKey
+        )
+      )
+      expect(JSON.parse(decrypt(await nextWsMessage(first.ws), first.sharedKey)!)).toMatchObject({
+        id: 'status-after-auth',
+        ok: true
+      })
+      expect(onMobileConnectionCountChange).toHaveBeenCalledTimes(2)
+
+      first.ws.close()
+      await waitForWsClose(first.ws)
+      await waitFor(() => onMobileConnectionCountChange.mock.calls.length === 3)
+      expect(onMobileConnectionCountChange).toHaveBeenLastCalledWith(1)
+
+      second.ws.close()
+      await waitForWsClose(second.ws)
+      await waitFor(() => onMobileConnectionCountChange.mock.calls.length === 4)
+      expect(onMobileConnectionCountChange).toHaveBeenLastCalledWith(0)
+    } finally {
+      await server.stop()
+    }
+  })
+
+  it('does not report runtime-scoped or failed-auth WebSockets as mobile connections', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
+    const runtime = new OrcaRuntimeService()
+    const onMobileConnectionCountChange = vi.fn()
+    const server = new OrcaRuntimeRpcServer({
+      runtime,
+      userDataPath,
+      enableWebSocket: true,
+      wsPort: 0,
+      onMobileConnectionCountChange
+    })
+
+    await server.start()
+
+    try {
+      const runtimeOffer = server.createPairingOffer({
+        address: '127.0.0.1',
+        name: 'runtime-test'
+      })
+      expect(runtimeOffer.available).toBe(true)
+      if (!runtimeOffer.available) {
+        throw new Error('WebSocket pairing unavailable')
+      }
+      const runtimeWs = await authenticateMobileWs(runtimeOffer.pairingUrl)
+      expect(onMobileConnectionCountChange).not.toHaveBeenCalled()
+
+      const mobileOffer = server.createPairingOffer({
+        address: '127.0.0.1',
+        name: 'mobile-test',
+        scope: 'mobile'
+      })
+      expect(mobileOffer.available).toBe(true)
+      if (!mobileOffer.available) {
+        throw new Error('WebSocket pairing unavailable')
+      }
+      const parsed = parsePairingCode(mobileOffer.pairingUrl)!
+      const failedWs = await connectWs(parsed.endpoint)
+      const failedKeys = generateKeyPair()
+      const failedSharedKey = deriveSharedKey(
+        failedKeys.secretKey,
+        Uint8Array.from(Buffer.from(parsed.publicKeyB64, 'base64'))
+      )
+      failedWs.send(
+        JSON.stringify({
+          type: 'e2ee_hello',
+          publicKeyB64: Buffer.from(failedKeys.publicKey).toString('base64')
+        })
+      )
+      expect(JSON.parse(await nextWsMessage(failedWs))).toEqual({ type: 'e2ee_ready' })
+      failedWs.send(
+        encrypt(JSON.stringify({ type: 'e2ee_auth', deviceToken: 'bad-token' }), failedSharedKey)
+      )
+      await waitForWsClose(failedWs)
+
+      expect(onMobileConnectionCountChange).not.toHaveBeenCalled()
+      runtimeWs.close()
+      await waitForWsClose(runtimeWs)
+    } finally {
+      await server.stop()
+    }
+  })
+
+  it('clears mobile connection count once when stopping with active mobile sockets', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
+    const runtime = new OrcaRuntimeService()
+    const onMobileConnectionCountChange = vi.fn()
+    const server = new OrcaRuntimeRpcServer({
+      runtime,
+      userDataPath,
+      enableWebSocket: true,
+      wsPort: 0,
+      onMobileConnectionCountChange
+    })
+
+    await server.start()
+
+    const offer = server.createPairingOffer({
+      address: '127.0.0.1',
+      name: 'mobile-test',
+      scope: 'mobile'
+    })
+    expect(offer.available).toBe(true)
+    if (!offer.available) {
+      throw new Error('WebSocket pairing unavailable')
+    }
+    await authenticateMobileWs(offer.pairingUrl)
+    await waitFor(() => onMobileConnectionCountChange.mock.calls.length === 1)
+
+    await server.stop()
+
+    expect(onMobileConnectionCountChange.mock.calls).toEqual([[1], [0]])
   })
 
   it('does not revoke runtime-scoped devices through mobile revocation', async () => {

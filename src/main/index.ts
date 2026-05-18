@@ -74,6 +74,7 @@ import { setUnreadDockBadgeCount } from './dock/unread-badge'
 import { registerFeatureWallFirstAgentTour } from './feature-wall/first-agent-tour'
 import { AutomationService } from './automations/service'
 import { AgentAwakeService } from './agent-awake-service'
+import { createAgentAwakeRuntimeWiring } from './agent-awake-runtime-wiring'
 import {
   getCrashBreadcrumbSnapshot,
   recordCrashBreadcrumb
@@ -919,7 +920,8 @@ app.whenReady().then(async () => {
     ...(isE2E ? { wsPort: 0 } : {}),
     ...(devWsPort !== undefined ? { wsPort: devWsPort } : {}),
     ...(serveOptions?.wsPort !== undefined ? { wsPort: serveOptions.wsPort } : {}),
-    webClientRoot: getBundledWebClientRoot()
+    webClientRoot: getBundledWebClientRoot(),
+    ...createAgentAwakeRuntimeWiring(() => agentAwakeService)
   })
   registerMobileHandlers(runtimeRpc)
 

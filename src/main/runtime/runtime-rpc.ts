@@ -17,7 +17,7 @@ import type { RpcMessageContext, RpcTransport } from './rpc/transport'
 import { UnixSocketTransport } from './rpc/unix-socket-transport'
 import { WebSocketTransport } from './rpc/ws-transport'
 import type { WebSocket } from 'ws'
-import { DeviceRegistry, type DeviceScope } from './device-registry'
+import { DeviceRegistry, type DeviceEntry, type DeviceScope } from './device-registry'
 import { loadOrCreateE2EEKeypair, type E2EEKeypair } from './e2ee-keypair'
 import { E2EEChannel } from './rpc/e2ee-channel'
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../../shared/pairing'
@@ -36,6 +36,7 @@ type OrcaRuntimeRpcServerOptions = {
   enableWebSocket?: boolean
   wsPort?: number
   webClientRoot?: string
+  onMobileConnectionCountChange?: (count: number) => void
   // Why: test-only overrides for the two time-bound constants below.
   // Production callers must not pass these — defaults are set by the design
   // doc (§3.1) and changing them in production would weaken the admission
@@ -187,6 +188,7 @@ export class OrcaRuntimeRpcServer {
   private readonly enableWebSocket: boolean
   private readonly wsPort: number
   private readonly webClientRoot: string | undefined
+  private readonly onMobileConnectionCountChange: ((count: number) => void) | undefined
   private readonly authToken = randomBytes(24).toString('hex')
   private readonly keepaliveIntervalMs: number
   private readonly longPollCap: number
@@ -203,6 +205,9 @@ export class OrcaRuntimeRpcServer {
   // subscriptions, so the server can reap a closing socket's subscriptions
   // without affecting other live sockets that share the same deviceToken.
   private wsConnectionIds = new Map<WebSocket, string>()
+  // Why: mobile presence is a connection-level wake reason; track exact sockets
+  // so multi-screen phones and duplicate auth paths clean up idempotently.
+  private activeMobileWebSockets = new Set<WebSocket>()
   private readonly binaryStreamHandlers = new Map<
     string,
     Map<number, (frame: TerminalStreamFrame) => void>
@@ -220,6 +225,7 @@ export class OrcaRuntimeRpcServer {
     enableWebSocket = false,
     wsPort = DEFAULT_WS_PORT,
     webClientRoot,
+    onMobileConnectionCountChange,
     keepaliveIntervalMs = KEEPALIVE_INTERVAL_MS,
     longPollCap = LONG_POLL_CAP
   }: OrcaRuntimeRpcServerOptions) {
@@ -231,6 +237,7 @@ export class OrcaRuntimeRpcServer {
     this.enableWebSocket = enableWebSocket
     this.wsPort = wsPort
     this.webClientRoot = webClientRoot
+    this.onMobileConnectionCountChange = onMobileConnectionCountChange
     this.keepaliveIntervalMs = keepaliveIntervalMs
     this.longPollCap = longPollCap
   }
@@ -258,6 +265,29 @@ export class OrcaRuntimeRpcServer {
     }
     this.wsTransport?.terminateClientConnections(device.token)
     return true
+  }
+
+  private trackAuthenticatedMobileSocket(ws: WebSocket, device: DeviceEntry): void {
+    if (device.scope !== 'mobile' || this.activeMobileWebSockets.has(ws)) {
+      return
+    }
+    this.activeMobileWebSockets.add(ws)
+    this.onMobileConnectionCountChange?.(this.activeMobileWebSockets.size)
+  }
+
+  private untrackMobileSocket(ws: WebSocket): void {
+    if (!this.activeMobileWebSockets.delete(ws)) {
+      return
+    }
+    this.onMobileConnectionCountChange?.(this.activeMobileWebSockets.size)
+  }
+
+  private clearMobileSockets(): void {
+    if (this.activeMobileWebSockets.size === 0) {
+      return
+    }
+    this.activeMobileWebSockets.clear()
+    this.onMobileConnectionCountChange?.(0)
   }
 
   getWebSocketEndpoint(): string | null {
@@ -449,6 +479,7 @@ export class OrcaRuntimeRpcServer {
                   const device = this.deviceRegistry?.validateToken(ch.deviceToken)
                   if (device) {
                     this.deviceRegistry?.updateLastSeen(device.deviceId)
+                    this.trackAuthenticatedMobileSocket(ws, device)
                   }
                 }
               },
@@ -482,6 +513,7 @@ export class OrcaRuntimeRpcServer {
         // so destroy the channel for THIS exact ws and skip the per-client
         // teardown when other sockets for the same token are still alive.
         wsTransport.onConnectionClose((clientId, ws, hasOtherConnections) => {
+          this.untrackMobileSocket(ws)
           // Why: sweep streaming subscriptions for THIS ws regardless of
           // hasOtherConnections, so per-ws listeners (notifications,
           // accounts, terminal) don't leak across reconnects. This is
@@ -532,6 +564,7 @@ export class OrcaRuntimeRpcServer {
       // behind a live but undiscoverable control plane.
       this.activeTransports = []
       this.transports = []
+      this.clearMobileSockets()
       await Promise.all(activeTransports.map((t) => t.stop().catch(() => {}))).catch(() => {})
       throw error
     }
@@ -542,6 +575,7 @@ export class OrcaRuntimeRpcServer {
     this.activeTransports = []
     this.transports = []
     this.wsTransport = null
+    this.clearMobileSockets()
     if (transports.length === 0) {
       return
     }
