@@ -997,8 +997,8 @@ function ConfirmRemove({
         <div className="flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
           <span>
-            Orca rechecks each workspace first. Anything no longer safe to delete is skipped and
-            reported.
+            Orca rechecks each workspace first. Any workspaces no longer safe to delete are skipped
+            and reported.
           </span>
         </div>
         <div className="flex shrink-0 gap-2 sm:justify-end">
