@@ -618,6 +618,92 @@ describe('connectPanePty', () => {
     ).toBe('done')
   })
 
+  it('clears unchanged title-only working indicators after acknowledged interrupt input', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    transportFactoryQueue.push(transport)
+    vi.useFakeTimers()
+    vi.setSystemTime(1_100)
+    mockStoreState.runtimePaneTitlesByTabId = {
+      'tab-1': {
+        1: 'Codex working'
+      }
+    }
+    const terminalTarget = createKeyboardEventTarget()
+    const pane = createPane(1)
+    ;(pane.terminal as { element?: unknown }).element = terminalTarget.target
+    let onDataHandler: ((data: string) => void) | null = null
+    pane.terminal.onData = vi.fn(((handler: (data: string) => void) => {
+      onDataHandler = handler
+      return { dispose: vi.fn() }
+    }) as typeof pane.terminal.onData)
+    const manager = createManager(1)
+    manager.getActivePane.mockReturnValue({ id: 1 })
+    const deps = createDeps({
+      setRuntimePaneTitle: vi.fn((tabId: string, paneId: number, title: string) => {
+        mockStoreState.runtimePaneTitlesByTabId = {
+          ...mockStoreState.runtimePaneTitlesByTabId,
+          [tabId]: {
+            ...mockStoreState.runtimePaneTitlesByTabId[tabId],
+            [paneId]: title
+          }
+        }
+      })
+    })
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    if (!onDataHandler) {
+      throw new Error('expected onData handler to be registered')
+    }
+    terminalTarget.dispatch(keyEvent({ key: 'c', ctrlKey: true }))
+    ;(onDataHandler as unknown as (data: string) => void)('\x03')
+    await flushAsyncTicks()
+    vi.advanceTimersByTime(500)
+    await flushAsyncTicks()
+
+    expect(window.api.agentStatus.inferInterrupt).not.toHaveBeenCalled()
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Terminal')
+    expect(deps.updateTabTitle).toHaveBeenCalledWith('tab-1', 'Terminal')
+  })
+
+  it('does not clear title-only working indicators when interrupt writes are unacknowledged', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    delete transport.sendInputAccepted
+    transportFactoryQueue.push(transport)
+    vi.useFakeTimers()
+    vi.setSystemTime(1_100)
+    mockStoreState.runtimePaneTitlesByTabId = {
+      'tab-1': {
+        1: 'Codex working'
+      }
+    }
+    const terminalTarget = createKeyboardEventTarget()
+    const pane = createPane(1)
+    ;(pane.terminal as { element?: unknown }).element = terminalTarget.target
+    let onDataHandler: ((data: string) => void) | null = null
+    pane.terminal.onData = vi.fn(((handler: (data: string) => void) => {
+      onDataHandler = handler
+      return { dispose: vi.fn() }
+    }) as typeof pane.terminal.onData)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, createManager(1) as never, deps as never)
+    if (!onDataHandler) {
+      throw new Error('expected onData handler to be registered')
+    }
+    terminalTarget.dispatch(keyEvent({ key: 'c', ctrlKey: true }))
+    ;(onDataHandler as unknown as (data: string) => void)('\x03')
+    await flushAsyncTicks()
+    vi.advanceTimersByTime(500)
+    await flushAsyncTicks()
+
+    expect(transport.sendInput).toHaveBeenCalledWith('\x03')
+    expect(window.api.agentStatus.inferInterrupt).not.toHaveBeenCalled()
+    expect(deps.setRuntimePaneTitle).not.toHaveBeenCalled()
+    expect(deps.updateTabTitle).not.toHaveBeenCalled()
+  })
+
   it('infers exact Ctrl+C terminal input when keydown capture misses the press', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport()
@@ -708,7 +794,7 @@ describe('connectPanePty', () => {
     })
   })
 
-  it('drops stale working status instead of inferring done when the title is already non-agent', async () => {
+  it('infers interrupt for an explicit working status even if the title is already non-agent', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport()
     transportFactoryQueue.push(transport)
@@ -754,11 +840,18 @@ describe('connectPanePty', () => {
     vi.advanceTimersByTime(500)
     await flushAsyncTicks()
 
-    expect(window.api.agentStatus.inferInterrupt).not.toHaveBeenCalled()
-    expect(mockStoreState.dropAgentStatus).toHaveBeenCalledWith(paneKey)
+    expect(window.api.agentStatus.inferInterrupt).toHaveBeenCalledWith({
+      paneKey,
+      baselineUpdatedAt: 1_000,
+      baselineStateStartedAt: 900,
+      baselinePrompt: 'stop after process exit',
+      baselineAgentType: 'codex',
+      intent: 'ctrl-c'
+    })
+    expect(mockStoreState.dropAgentStatus).not.toHaveBeenCalled()
   })
 
-  it('drops inferred interrupted status after the pane settles on a non-agent title', async () => {
+  it('keeps inferred interrupted status after the pane settles on a non-agent title', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport()
     transportFactoryQueue.push(transport)
@@ -828,7 +921,7 @@ describe('connectPanePty', () => {
     vi.advanceTimersByTime(750)
     await flushAsyncTicks()
 
-    expect(mockStoreState.dropAgentStatus).toHaveBeenCalledWith(paneKey)
+    expect(mockStoreState.dropAgentStatus).not.toHaveBeenCalled()
   })
 
   it('does not infer exact interrupt input when the transport cannot acknowledge writes', async () => {
@@ -1447,10 +1540,9 @@ describe('connectPanePty', () => {
     expect(mockStoreState.removeAgentStatus).not.toHaveBeenCalled()
   })
 
-  it('flushes pending interrupt inference before OSC 133 can drop the status row', async () => {
+  it('flushes pending interrupt inference before dropping an exited foreground agent command', async () => {
     const { connectPanePty } = await import('./pty-connection')
 
-    vi.mocked(window.api.agentStatus.inferInterrupt).mockResolvedValue(true)
     const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
     const transport = createMockTransport()
     const writeAccepted = createDeferred<boolean>()
@@ -1481,6 +1573,26 @@ describe('connectPanePty', () => {
         }
       }
     }
+    vi.mocked(window.api.agentStatus.inferInterrupt).mockImplementation(async () => {
+      mockStoreState.agentStatusByPaneKey[paneKey] = {
+        paneKey,
+        state: 'done',
+        prompt: 'stop quickly',
+        updatedAt: 1_100,
+        stateStartedAt: 1_100,
+        agentType: 'codex',
+        terminalTitle: 'Codex',
+        interrupted: true,
+        stateHistory: [
+          {
+            state: 'working',
+            prompt: 'stop quickly',
+            startedAt: 900
+          }
+        ]
+      }
+      return true
+    })
     const terminalTarget = createKeyboardEventTarget()
     const pane = createPane(1)
     ;(pane.terminal as { element?: unknown }).element = terminalTarget.target
@@ -1520,7 +1632,7 @@ describe('connectPanePty', () => {
       baselineAgentType: 'codex',
       intent: 'ctrl-c'
     })
-    expect(mockStoreState.dropAgentStatus).not.toHaveBeenCalled()
+    expect(mockStoreState.dropAgentStatus).toHaveBeenCalledWith(paneKey)
   })
 
   it('drops the command-finished status when pending interrupt inference is rejected', async () => {
@@ -2817,10 +2929,9 @@ describe('connectPanePty', () => {
     expect('agentInterrupted' in dispatchArgs).toBe(false)
   })
 
-  // Why: onAgentExited must clear any running prompt-cache countdown so the
-  // sidebar does not show a stale timer for a tab that no longer has an
-  // active Claude session.
-  it('clears the cache timer when the agent exits', async () => {
+  // Why: title reversion clears cache UI, but agent-row removal belongs to
+  // process/PTY lifecycle so interrupts cannot disappear the activity row.
+  it('clears the cache timer without removing agent status when the title tracker sees exit', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport()
     transportFactoryQueue.push(transport)
@@ -2839,5 +2950,6 @@ describe('connectPanePty', () => {
     agentExitedHandler()
 
     expect(deps.setCacheTimerStartedAt).toHaveBeenCalledWith(makePaneKey('tab-1', LEAF_1), null)
+    expect(mockStoreState.removeAgentStatus).not.toHaveBeenCalled()
   })
 })

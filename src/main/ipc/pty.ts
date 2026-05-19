@@ -305,6 +305,13 @@ export function buildPtyHostEnv(
   // must inject the loopback receiver coordinates before the agent starts.
   // Without these env vars the global hook config cannot map callbacks back
   // to the correct Orca pane.
+  if (!opts.isPackaged) {
+    // Why: `pnpm dev` is often launched from an Orca-managed terminal, so
+    // process.env can already contain another instance's endpoint.env path.
+    // Dev PTYs must use their direct port/token only; otherwise hook scripts
+    // source the stale shared endpoint and report to the wrong app.
+    delete baseEnv.ORCA_AGENT_HOOK_ENDPOINT
+  }
   Object.assign(baseEnv, agentHookServer.buildPtyEnv())
 
   // Why: PI_CODING_AGENT_DIR owns Pi's full config/session root. Build a

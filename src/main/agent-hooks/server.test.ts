@@ -120,6 +120,70 @@ describe('AgentHookServer listener replay', () => {
     }
   })
 
+  it('preserves an inferred interrupted row when OpenCode immediately reports SessionIdle', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    try {
+      const server = new AgentHookServer()
+      const listener = vi.fn()
+      server.setListener(listener)
+      server.ingestRemote(
+        {
+          paneKey: PANE,
+          tabId: 'tab-1',
+          worktreeId: 'wt-1',
+          payload: { state: 'working', prompt: 'long task', agentType: 'opencode' }
+        },
+        'conn-1'
+      )
+      const baseline = server.getStatusSnapshot()[0]
+
+      vi.setSystemTime(1_500)
+      expect(
+        server.inferInterrupt({
+          paneKey: PANE,
+          baselineUpdatedAt: baseline.receivedAt,
+          baselineStateStartedAt: baseline.stateStartedAt,
+          baselinePrompt: 'long task',
+          baselineAgentType: 'opencode',
+          intent: 'plain-escape',
+          inputCount: 2
+        })
+      ).toBe(true)
+
+      vi.setSystemTime(1_501)
+      server.ingestRemote(
+        {
+          paneKey: PANE,
+          tabId: 'tab-1',
+          worktreeId: 'wt-1',
+          payload: { state: 'done', prompt: 'long task', agentType: 'opencode' }
+        },
+        'conn-1'
+      )
+
+      expect(server.getStatusSnapshot()).toEqual([
+        expect.objectContaining({
+          paneKey: PANE,
+          state: 'done',
+          prompt: 'long task',
+          agentType: 'opencode',
+          interrupted: true,
+          receivedAt: 1_500,
+          stateStartedAt: 1_500
+        })
+      ])
+      expect(listener).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          paneKey: PANE,
+          payload: expect.objectContaining({ state: 'done', interrupted: true })
+        })
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('rejects inferred interrupts when a same-millisecond prompt update changed the row', () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)
@@ -167,85 +231,91 @@ describe('AgentHookServer listener replay', () => {
     }
   })
 
-  it('rejects single plain Escape inference for OpenCode', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(1_000)
-    try {
-      const server = new AgentHookServer()
-      server.ingestRemote(
-        {
+  it.each(['opencode', 'copilot'] as const)(
+    'rejects single plain Escape inference for %s',
+    (agentType) => {
+      vi.useFakeTimers()
+      vi.setSystemTime(1_000)
+      try {
+        const server = new AgentHookServer()
+        server.ingestRemote(
+          {
+            paneKey: PANE,
+            tabId: 'tab-1',
+            worktreeId: 'wt-1',
+            payload: { state: 'working', prompt: 'long task', agentType }
+          },
+          'conn-1'
+        )
+        const baseline = server.getStatusSnapshot()[0]
+
+        vi.setSystemTime(1_500)
+        const applied = server.inferInterrupt({
           paneKey: PANE,
-          tabId: 'tab-1',
-          worktreeId: 'wt-1',
-          payload: { state: 'working', prompt: 'long task', agentType: 'opencode' }
-        },
-        'conn-1'
-      )
-      const baseline = server.getStatusSnapshot()[0]
-
-      vi.setSystemTime(1_500)
-      const applied = server.inferInterrupt({
-        paneKey: PANE,
-        baselineUpdatedAt: baseline.receivedAt,
-        baselineStateStartedAt: baseline.stateStartedAt,
-        baselinePrompt: 'long task',
-        baselineAgentType: 'opencode',
-        intent: 'plain-escape'
-      })
-
-      expect(applied).toBe(false)
-      expect(server.getStatusSnapshot()).toEqual([
-        expect.objectContaining({
-          state: 'working',
-          prompt: 'long task',
-          agentType: 'opencode'
+          baselineUpdatedAt: baseline.receivedAt,
+          baselineStateStartedAt: baseline.stateStartedAt,
+          baselinePrompt: 'long task',
+          baselineAgentType: agentType,
+          intent: 'plain-escape'
         })
-      ])
-    } finally {
-      vi.useRealTimers()
-    }
-  })
 
-  it('accepts double plain Escape inference for OpenCode', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(1_000)
-    try {
-      const server = new AgentHookServer()
-      server.ingestRemote(
-        {
+        expect(applied).toBe(false)
+        expect(server.getStatusSnapshot()).toEqual([
+          expect.objectContaining({
+            state: 'working',
+            prompt: 'long task',
+            agentType
+          })
+        ])
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+  )
+
+  it.each(['opencode', 'copilot'] as const)(
+    'accepts double plain Escape inference for %s',
+    (agentType) => {
+      vi.useFakeTimers()
+      vi.setSystemTime(1_000)
+      try {
+        const server = new AgentHookServer()
+        server.ingestRemote(
+          {
+            paneKey: PANE,
+            tabId: 'tab-1',
+            worktreeId: 'wt-1',
+            payload: { state: 'working', prompt: 'long task', agentType }
+          },
+          'conn-1'
+        )
+        const baseline = server.getStatusSnapshot()[0]
+
+        vi.setSystemTime(1_500)
+        const applied = server.inferInterrupt({
           paneKey: PANE,
-          tabId: 'tab-1',
-          worktreeId: 'wt-1',
-          payload: { state: 'working', prompt: 'long task', agentType: 'opencode' }
-        },
-        'conn-1'
-      )
-      const baseline = server.getStatusSnapshot()[0]
-
-      vi.setSystemTime(1_500)
-      const applied = server.inferInterrupt({
-        paneKey: PANE,
-        baselineUpdatedAt: baseline.receivedAt,
-        baselineStateStartedAt: baseline.stateStartedAt,
-        baselinePrompt: 'long task',
-        baselineAgentType: 'opencode',
-        intent: 'plain-escape',
-        inputCount: 2
-      })
-
-      expect(applied).toBe(true)
-      expect(server.getStatusSnapshot()).toEqual([
-        expect.objectContaining({
-          state: 'done',
-          prompt: 'long task',
-          agentType: 'opencode',
-          interrupted: true
+          baselineUpdatedAt: baseline.receivedAt,
+          baselineStateStartedAt: baseline.stateStartedAt,
+          baselinePrompt: 'long task',
+          baselineAgentType: agentType,
+          intent: 'plain-escape',
+          inputCount: 2
         })
-      ])
-    } finally {
-      vi.useRealTimers()
+
+        expect(applied).toBe(true)
+        expect(server.getStatusSnapshot()).toEqual([
+          expect.objectContaining({
+            state: 'done',
+            prompt: 'long task',
+            agentType,
+            interrupted: true
+          })
+        ])
+      } finally {
+        vi.useRealTimers()
+      }
     }
-  })
+  )
 
   it('does not let late same-turn working hooks resurrect an inferred interrupt', () => {
     vi.useFakeTimers()
@@ -2914,6 +2984,22 @@ describe('Endpoint file lifecycle', () => {
     try {
       const env = server.buildPtyEnv()
       expect(env.ORCA_AGENT_HOOK_ENDPOINT).toBe(server.endpointFilePath)
+    } finally {
+      server.stop()
+    }
+  })
+
+  it('buildPtyEnv omits ORCA_AGENT_HOOK_ENDPOINT for development servers', async () => {
+    // Why: dev worktrees share the same orca-dev userData path. Exporting the
+    // shared endpoint file lets the most recently started dev app steal hook
+    // callbacks from terminals spawned by another worktree.
+    const server = new AgentHookServer()
+    await server.start({ env: 'development', userDataPath })
+    try {
+      const env = server.buildPtyEnv()
+      expect(env.ORCA_AGENT_HOOK_ENDPOINT).toBeUndefined()
+      expect(env.ORCA_AGENT_HOOK_PORT).toBeTruthy()
+      expect(env.ORCA_AGENT_HOOK_TOKEN).toBeTruthy()
     } finally {
       server.stop()
     }

@@ -37,7 +37,16 @@ function requiresDoubleEscapeForAgent(
   agentType: AgentStatusEntry['agentType'],
   intent: AgentInterruptInputIntent
 ): boolean {
-  return agentType === 'opencode' && intent === 'plain-escape'
+  return (agentType === 'opencode' || agentType === 'copilot') && intent === 'plain-escape'
+}
+
+function shouldFlushInterruptImmediately(
+  baseline: Pick<CapturedInterruptBaseline, 'agentType' | 'intent'>
+): boolean {
+  return (
+    requiresDoubleEscapeForAgent(baseline.agentType, baseline.intent) ||
+    baseline.agentType === 'gemini'
+  )
 }
 
 function isSameTurnBaseline(
@@ -87,7 +96,8 @@ export function createAgentInterruptInference({
 }: AgentInterruptInferenceDeps): AgentInterruptInference {
   let pendingTimer: ReturnType<typeof setTimeout> | null = null
   let pendingBaseline: CapturedInterruptBaseline | null = null
-  let openCodeEscapeBaseline: CapturedInterruptBaseline | null = null
+  let doubleEscapeBaseline: CapturedInterruptBaseline | null = null
+  let doubleEscapeTimer: ReturnType<typeof setTimeout> | null = null
 
   const clearPendingTimer = (): void => {
     if (pendingTimer !== null) {
@@ -97,9 +107,17 @@ export function createAgentInterruptInference({
     pendingBaseline = null
   }
 
+  const clearDoubleEscapeBaseline = (): void => {
+    doubleEscapeBaseline = null
+    if (doubleEscapeTimer !== null) {
+      clearTimer(doubleEscapeTimer)
+      doubleEscapeTimer = null
+    }
+  }
+
   const clearPending = (): void => {
     clearPendingTimer()
-    openCodeEscapeBaseline = null
+    clearDoubleEscapeBaseline()
   }
 
   const captureBaseline = (
@@ -176,20 +194,33 @@ export function createAgentInterruptInference({
       }
       if (requiresDoubleEscapeForAgent(baseline.agentType, intent)) {
         const isSecondEscape =
-          openCodeEscapeBaseline !== null && isSameTurnBaseline(openCodeEscapeBaseline, baseline)
-        openCodeEscapeBaseline = baseline
+          doubleEscapeBaseline !== null && isSameTurnBaseline(doubleEscapeBaseline, baseline)
+        doubleEscapeBaseline = baseline
         clearPendingTimer()
         if (!isSecondEscape) {
+          if (doubleEscapeTimer !== null) {
+            clearTimer(doubleEscapeTimer)
+          }
+          // Why: some TUIs use the first Escape as an editor/menu cancel. Do
+          // not let that arm a later single Escape indefinitely.
+          doubleEscapeTimer = setTimer(clearDoubleEscapeBaseline, AGENT_INTERRUPT_SETTLE_MS)
           return
         }
-        // Why: OpenCode uses the first Escape as a TUI/editor cancel. The
+        clearDoubleEscapeBaseline()
+        // Why: these agents use the first Escape as a TUI/editor cancel. The
         // second Escape on the same turn is the actual running-turn interrupt.
         baseline = { ...baseline, inputCount: 2 }
       } else {
-        openCodeEscapeBaseline = null
+        clearDoubleEscapeBaseline()
         clearPendingTimer()
       }
       pendingBaseline = baseline
+      if (shouldFlushInterruptImmediately(baseline)) {
+        // Why: these agents can emit their idle/done hook immediately after an
+        // accepted interrupt. Flush before that hook overwrites the working baseline.
+        void flushPending()
+        return
+      }
       pendingTimer = setTimer(flushPendingFromTimer, AGENT_INTERRUPT_SETTLE_MS)
     },
     flushPending,

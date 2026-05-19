@@ -38,7 +38,10 @@ import {
   isCtrlCKeyEvent,
   isPlainEscapeKeyEvent
 } from './agent-interrupt-inference'
-import type { AgentInterruptInputIntent } from '../../../../shared/agent-interrupt-intent'
+import {
+  AGENT_INTERRUPT_SETTLE_MS,
+  type AgentInterruptInputIntent
+} from '../../../../shared/agent-interrupt-intent'
 
 const pendingSpawnByPaneKey = new Map<string, Promise<string | null>>()
 const SSH_SESSION_EXPIRED_ERROR = 'SSH_SESSION_EXPIRED'
@@ -47,7 +50,6 @@ const PTY_CONNECT_DIAG_LIMIT = 200
 const AGENT_TASK_COMPLETE_NOTIFICATION_GRACE_MS = 250
 const AGENT_TASK_COMPLETE_NOTIFICATION_MAX_WAIT_MS = 1000
 const AGENT_TASK_COMPLETE_NOTIFICATION_DETAIL_MAX_AGE_MS = 10_000
-const INFERRED_INTERRUPT_NEUTRAL_TITLE_DROP_MS = 750
 
 function isAgentTaskCompleteNotificationEnabled(): boolean {
   const notifications = useAppStore.getState().settings?.notifications
@@ -178,7 +180,6 @@ export function connectPanePty(
   let agentTaskCompleteNotificationGraceTimer: ReturnType<typeof setTimeout> | null = null
   let agentTaskCompleteNotificationMaxTimer: ReturnType<typeof setTimeout> | null = null
   let agentTaskCompleteStatusUnsubscribe: (() => void) | null = null
-  let inferredInterruptNeutralTitleDropTimer: ReturnType<typeof setTimeout> | null = null
   let terminalBellNotificationTimer: ReturnType<typeof setTimeout> | null = null
   let pendingTerminalBellNotification = false
   // Why: passphrase-gate waits register a teardown here so dispose() can
@@ -207,36 +208,6 @@ export function connectPanePty(
     )
     return tab?.defaultTitle?.trim() || 'Terminal'
   }
-  const inferredInterruptTargetStillLooksAgent = (): boolean => {
-    const state = useAppStore.getState()
-    const currentTitle = state.runtimePaneTitlesByTabId?.[deps.tabId]?.[pane.id]
-    const tabTitle = (state.tabsByWorktree[deps.worktreeId] ?? []).find(
-      (entry) => entry.id === deps.tabId
-    )?.title
-    const statusTitle = state.agentStatusByPaneKey[cacheKey]?.terminalTitle
-    const title = currentTitle ?? tabTitle ?? statusTitle
-    return title ? detectAgentStatusFromTitle(title) !== null : true
-  }
-  const clearInferredInterruptNeutralTitleDropTimer = (): void => {
-    if (inferredInterruptNeutralTitleDropTimer !== null) {
-      clearTimeout(inferredInterruptNeutralTitleDropTimer)
-      inferredInterruptNeutralTitleDropTimer = null
-    }
-  }
-  const scheduleInferredInterruptNeutralTitleDrop = (): void => {
-    clearInferredInterruptNeutralTitleDropTimer()
-    inferredInterruptNeutralTitleDropTimer = setTimeout(() => {
-      inferredInterruptNeutralTitleDropTimer = null
-      const entry = useAppStore.getState().agentStatusByPaneKey[cacheKey]
-      if (
-        entry?.state === 'done' &&
-        entry.interrupted === true &&
-        !inferredInterruptTargetStillLooksAgent()
-      ) {
-        useAppStore.getState().dropAgentStatus(cacheKey)
-      }
-    }, INFERRED_INTERRUPT_NEUTRAL_TITLE_DROP_MS)
-  }
   const clearInferredInterruptWorkingTitle = (): void => {
     const state = useAppStore.getState()
     const currentTitle = state.runtimePaneTitlesByTabId?.[deps.tabId]?.[pane.id]
@@ -255,20 +226,60 @@ export function connectPanePty(
       deps.updateTabTitle(deps.tabId, neutralTitle)
     }
   }
+  let titleOnlyInterruptTimer: ReturnType<typeof setTimeout> | null = null
+  const clearTitleOnlyInterruptTimer = (): void => {
+    if (titleOnlyInterruptTimer !== null) {
+      clearTimeout(titleOnlyInterruptTimer)
+      titleOnlyInterruptTimer = null
+    }
+  }
+  const observeTitleOnlyInterrupt = (): void => {
+    const state = useAppStore.getState()
+    if (state.agentStatusByPaneKey[cacheKey]) {
+      return
+    }
+    const runtimeTitle = state.runtimePaneTitlesByTabId?.[deps.tabId]?.[pane.id]
+    const tabTitle = (state.tabsByWorktree[deps.worktreeId] ?? []).find(
+      (entry) => entry.id === deps.tabId
+    )?.title
+    const baselineTitle = runtimeTitle ?? tabTitle
+    if (detectAgentStatusFromTitle(baselineTitle ?? '') !== 'working') {
+      return
+    }
+    clearTitleOnlyInterruptTimer()
+    titleOnlyInterruptTimer = setTimeout(() => {
+      titleOnlyInterruptTimer = null
+      if (useAppStore.getState().agentStatusByPaneKey[cacheKey]) {
+        return
+      }
+      const currentState = useAppStore.getState()
+      const currentRuntimeTitle = currentState.runtimePaneTitlesByTabId?.[deps.tabId]?.[pane.id]
+      const currentTabTitle = (currentState.tabsByWorktree[deps.worktreeId] ?? []).find(
+        (entry) => entry.id === deps.tabId
+      )?.title
+      const currentTitle = currentRuntimeTitle ?? currentTabTitle
+      if (
+        currentTitle === baselineTitle &&
+        detectAgentStatusFromTitle(currentTitle ?? '') === 'working'
+      ) {
+        // Why: title-only agents such as Pi can miss their own idle title after
+        // Ctrl+C. Clear only an unchanged, acknowledged working title.
+        clearInferredInterruptWorkingTitle()
+      }
+    }, AGENT_INTERRUPT_SETTLE_MS)
+  }
   const interruptInference = createAgentInterruptInference({
     paneKey: cacheKey,
     getStatusEntry: () => useAppStore.getState().agentStatusByPaneKey[cacheKey],
     inferInterrupt: (request) => {
-      if (!inferredInterruptTargetStillLooksAgent()) {
-        useAppStore.getState().dropAgentStatus(cacheKey)
-        return false
-      }
+      // Why: the explicit hook row is the authority for an in-flight agent turn.
+      // Codex can reset its terminal title while handling Ctrl+C/Escape, so title
+      // state must not veto clearing the row's working state.
       return window.api.agentStatus
         .inferInterrupt(request)
         .then((applied) => {
           if (applied) {
             clearInferredInterruptWorkingTitle()
-            scheduleInferredInterruptNeutralTitleDrop()
           }
           return applied
         })
@@ -278,20 +289,37 @@ export function connectPanePty(
         })
     }
   })
-  const dropCommandFinishedStatusIfUnchanged = (entry: AgentStatusEntry | undefined): void => {
+  const dropCommandFinishedStatusIfSameTurn = (
+    entry: AgentStatusEntry | undefined,
+    options?: { allowInferredInterrupt?: boolean }
+  ): void => {
     if (!entry) {
       return
     }
     const state = useAppStore.getState()
     const current = state.agentStatusByPaneKey[cacheKey]
-    if (
-      !current ||
-      current.state !== entry.state ||
-      current.prompt !== entry.prompt ||
-      current.updatedAt !== entry.updatedAt ||
-      current.stateStartedAt !== entry.stateStartedAt ||
-      current.agentType !== entry.agentType
-    ) {
+    if (!current) {
+      return
+    }
+    const unchanged =
+      current.state === entry.state &&
+      current.prompt === entry.prompt &&
+      current.updatedAt === entry.updatedAt &&
+      current.stateStartedAt === entry.stateStartedAt &&
+      current.agentType === entry.agentType
+    const inferredFromEntry =
+      options?.allowInferredInterrupt === true &&
+      current.state === 'done' &&
+      current.interrupted === true &&
+      current.prompt === entry.prompt &&
+      current.agentType === entry.agentType &&
+      current.stateHistory?.some(
+        (history) =>
+          history.state === entry.state &&
+          history.prompt === entry.prompt &&
+          history.startedAt === entry.stateStartedAt
+      ) === true
+    if (!unchanged && !inferredFromEntry) {
       return
     }
     state.dropAgentStatus(cacheKey)
@@ -332,6 +360,7 @@ export function connectPanePty(
   ): void => {
     if (intent && inputMatchesIntent(intent, data)) {
       interruptInference.observeInputIntent(intent)
+      observeTitleOnlyInterrupt()
     }
   }
   let pendingTerminalInputWrite: Promise<void> | null = null
@@ -356,20 +385,25 @@ export function connectPanePty(
       const entry = state.agentStatusByPaneKey[cacheKey]
       const inferenceResult = flushPendingInterruptInference()
       if (inferenceResult === true) {
+        // Why: OSC 133 D means the foreground shell command exited. If an
+        // interrupt was inferred first, drop only when the current interrupted
+        // row is still the same turn; otherwise a killed OpenCode CLI leaves a
+        // stale "interrupted" row even though the process is gone.
+        dropCommandFinishedStatusIfSameTurn(entry, { allowInferredInterrupt: true })
         return
       }
       if (inferenceResult instanceof Promise) {
         void inferenceResult.then((applied) => {
-          if (!applied) {
-            dropCommandFinishedStatusIfUnchanged(entry)
-          }
+          dropCommandFinishedStatusIfSameTurn(entry, {
+            allowInferredInterrupt: applied === true
+          })
         })
         return
       }
       // Why: OSC 133 D marks the foreground shell command exiting. Remove the
       // row without retaining a done snapshot; this section represents a live
       // agent process, and the shell prompt means that process is gone.
-      dropCommandFinishedStatusIfUnchanged(entry)
+      dropCommandFinishedStatusIfSameTurn(entry)
     }
   })
   commandLifecycle.attachXtermConsumer(pane.terminal)
@@ -648,10 +682,9 @@ export function connectPanePty(
     // the agent has exited. Clear any running cache timer so the sidebar doesn't
     // show a stale countdown for a tab that no longer has an active Claude session.
     deps.setCacheTimerStartedAt(cacheKey, null)
-    // Why: do not let terminal-title reversion own agent-status lifecycle.
-    // Explicit hooks and OSC 133 command-finished marks are the reliable
-    // signals; title changes can race normal "done" states and make agents
-    // look like they vanished as soon as they finished responding.
+    clearTitleOnlyInterruptTimer()
+    // Why: title reversion alone is not process death. The process/PTY tracker
+    // owns removing agent rows when the TUI actually exits.
   }
   // Why: inject ORCA_PANE_KEY so global Claude/Codex hooks can attribute their
   // callbacks to the correct Orca pane without resolving worktrees from cwd.
@@ -778,6 +811,7 @@ export function connectPanePty(
         .then((accepted) => {
           if (accepted) {
             interruptInference.observeInputIntent(acknowledgedIntent)
+            observeTitleOnlyInterrupt()
           }
         })
         .catch((err) => {
@@ -1650,7 +1684,7 @@ export function connectPanePty(
       clearPendingTerminalInputIntent()
       pendingTerminalInputWrite = null
       interruptInference.dispose()
-      clearInferredInterruptNeutralTitleDropTimer()
+      clearTitleOnlyInterruptTimer()
       // Why: actively resolve any in-flight passphrase-gate waits so their
       // zustand subscribers + async IIFEs don't hang for the rest of the
       // session when the pane is torn down before SSH state changes.

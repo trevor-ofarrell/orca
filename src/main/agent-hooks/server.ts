@@ -311,9 +311,14 @@ export class AgentHookServer {
     }
     const payload = existing.payload
     const agentType: AgentType | undefined = payload.agentType
-    // Why: OpenCode's running-turn interrupt is double Escape. A single Escape
-    // is only a TUI/editor cancel and can leave the turn running.
-    if (agentType === 'opencode' && request.intent === 'plain-escape' && request.inputCount !== 2) {
+    // Why: these agents use the first Escape as a TUI/editor cancel. A single
+    // Escape can leave the turn running, so only a deliberate double Escape
+    // may infer an interrupted turn.
+    if (
+      (agentType === 'opencode' || agentType === 'copilot') &&
+      request.intent === 'plain-escape' &&
+      request.inputCount !== 2
+    ) {
       return false
     }
     // Why: input-intent inference is a fallback for a missing final hook. A strict
@@ -395,6 +400,16 @@ export class AgentHookServer {
       | undefined
     // Why: some TUIs can emit a delayed tool/working hook after Ctrl+C already
     // stopped the turn. Do not let that stale same-turn event resurrect the row.
+    if (
+      previous?.payload.state === 'done' &&
+      previous.payload.interrupted === true &&
+      payload.payload.state === 'done' &&
+      previous.payload.agentType === payload.payload.agentType &&
+      previous.payload.prompt === payload.payload.prompt &&
+      Date.now() - previous.receivedAt <= INTERRUPTED_DONE_LATE_WORKING_SUPPRESSION_MS
+    ) {
+      return previous
+    }
     if (
       previous?.payload.state === 'done' &&
       previous.payload.interrupted === true &&
@@ -873,7 +888,11 @@ export class AgentHookServer {
       ORCA_AGENT_HOOK_ENV: this.env,
       ORCA_AGENT_HOOK_VERSION: ORCA_HOOK_PROTOCOL_VERSION
     }
-    if (this.endpointFileWritten && this.endpointFilePathCache) {
+    // Why: parallel dev instances share the `orca-dev` userData path, making
+    // endpoint.env a last-writer-wins global. Local dev PTYs already receive
+    // this server's port/token directly; packaged builds keep endpoint sourcing
+    // so PTYs that survive an app restart can reconnect to the replacement server.
+    if (this.env !== 'development' && this.endpointFileWritten && this.endpointFilePathCache) {
       env.ORCA_AGENT_HOOK_ENDPOINT = this.endpointFilePathCache
     }
     return env

@@ -192,6 +192,7 @@ describe('registerPtyHandlers', () => {
     delete process.env.OPENCODE_CONFIG_DIR
     delete process.env.ORCA_OPENCODE_SOURCE_CONFIG_DIR
     delete process.env.ORCA_OPENCODE_CONFIG_DIR
+    delete process.env.ORCA_AGENT_HOOK_ENDPOINT
     delete process.env.PI_CODING_AGENT_DIR
     delete process.env.ORCA_PI_SOURCE_AGENT_DIR
     delete process.env.ORCA_PI_CODING_AGENT_DIR
@@ -769,6 +770,23 @@ describe('registerPtyHandlers', () => {
         const env = await daemonSpawnAndGetEnv({})
         expect(env.ORCA_AGENT_HOOK_PORT).toBe('5678')
         expect(env.ORCA_AGENT_HOOK_TOKEN).toBe('agent-token')
+      })
+
+      it('strips inherited agent-hook endpoint env from development daemon PTYs', async () => {
+        const { app } = await import('electron')
+        const mockedApp = app as unknown as { isPackaged: boolean }
+        const prev = mockedApp.isPackaged
+        mockedApp.isPackaged = false
+        try {
+          const env = await daemonSpawnAndGetEnv({}, undefined, undefined, {
+            ORCA_AGENT_HOOK_ENDPOINT: '/tmp/stale-endpoint.env'
+          })
+          expect(env.ORCA_AGENT_HOOK_ENDPOINT).toBeUndefined()
+          expect(env.ORCA_AGENT_HOOK_PORT).toBe('5678')
+          expect(env.ORCA_AGENT_HOOK_TOKEN).toBe('agent-token')
+        } finally {
+          mockedApp.isPackaged = prev
+        }
       })
 
       it('prepends attribution shims on the daemon path', async () => {
