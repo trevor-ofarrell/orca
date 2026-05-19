@@ -5,6 +5,7 @@ import { SearchableSetting } from './SearchableSetting'
 import { matchesSettingsSearch } from './settings-search'
 import { EXPERIMENTAL_PANE_SEARCH_ENTRIES, EXPERIMENTAL_SEARCH_ENTRY } from './experimental-search'
 import { HiddenExperimentalGroup } from './HiddenExperimentalGroup'
+import { TerminalMacrosSection } from './TerminalMacrosSection'
 
 export { EXPERIMENTAL_PANE_SEARCH_ENTRIES }
 
@@ -26,6 +27,9 @@ export function ExperimentalPane({
   const showAgentsView = matchesSettingsSearch(searchQuery, [EXPERIMENTAL_SEARCH_ENTRY.activity])
   const showWorktreeSymlinks = matchesSettingsSearch(searchQuery, [
     EXPERIMENTAL_SEARCH_ENTRY.symlinks
+  ])
+  const showTerminalMacros = matchesSettingsSearch(searchQuery, [
+    EXPERIMENTAL_SEARCH_ENTRY.terminalMacros
   ])
 
   return (
@@ -143,6 +147,28 @@ export function ExperimentalPane({
               />
             </button>
           </div>
+        </SearchableSetting>
+      ) : null}
+
+      {showTerminalMacros ? (
+        <SearchableSetting
+          title="Terminal Macros"
+          description="Named terminal launch presets available from the new-tab menu."
+          keywords={EXPERIMENTAL_SEARCH_ENTRY.terminalMacros.keywords}
+          className="space-y-3 px-1 py-2"
+        >
+          <div className="space-y-1.5">
+            <Label>Terminal Macros</Label>
+            <p className="text-xs text-muted-foreground">
+              Define named terminal launch presets that open a new tab, optionally create a split
+              right or down, and seed each pane with startup text. This remains experimental and
+              currently only appears in the tab-bar new-tab menu.
+            </p>
+          </div>
+          <TerminalMacrosSection
+            macros={settings.terminalMacros ?? []}
+            onChange={(terminalMacros) => updateSettings({ terminalMacros })}
+          />
         </SearchableSetting>
       ) : null}
 

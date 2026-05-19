@@ -1,5 +1,6 @@
 import type { SettingsSearchEntry } from './settings-search'
-import { TERMINAL_WINDOWS_SEARCH_ENTRIES } from './terminal-windows-search'
+
+export { getTerminalPaneSearchEntries } from './terminal-pane-search-entries'
 
 export const TERMINAL_TYPOGRAPHY_SEARCH_ENTRIES: SettingsSearchEntry[] = [
   {
@@ -290,29 +291,3 @@ export const TERMINAL_SETUP_SCRIPT_SEARCH_ENTRIES: SettingsSearchEntry[] = [
     ]
   }
 ]
-
-export function getTerminalPaneSearchEntries(platform: {
-  isWindows: boolean
-  isMac: boolean
-}): SettingsSearchEntry[] {
-  // Why: the settings search index must mirror the visible controls. Keeping
-  // platform-only controls out of other platforms' search results prevents
-  // users from landing on an option the UI intentionally hides.
-  return [
-    ...TERMINAL_TYPOGRAPHY_SEARCH_ENTRIES,
-    ...TERMINAL_FLOATING_SEARCH_ENTRIES,
-    ...TERMINAL_QUICK_COMMANDS_SEARCH_ENTRIES,
-    ...TERMINAL_RENDERING_SEARCH_ENTRIES,
-    ...TERMINAL_CURSOR_SEARCH_ENTRIES,
-    ...TERMINAL_PANE_STYLE_SEARCH_ENTRIES,
-    ...(platform.isWindows ? TERMINAL_WINDOWS_SEARCH_ENTRIES : []),
-    ...TERMINAL_DARK_THEME_SEARCH_ENTRIES,
-    ...TERMINAL_LIGHT_THEME_SEARCH_ENTRIES,
-    ...TERMINAL_WINDOW_SEARCH_ENTRIES,
-    ...TERMINAL_SETUP_SCRIPT_SEARCH_ENTRIES,
-    ...TERMINAL_GHOSTTY_IMPORT_SEARCH_ENTRIES,
-    ...MANAGE_SESSIONS_SEARCH_ENTRIES,
-    ...TERMINAL_ADVANCED_SEARCH_ENTRIES,
-    ...(platform.isMac ? TERMINAL_MAC_OPTION_SEARCH_ENTRIES : [])
-  ]
-}

@@ -1392,6 +1392,18 @@ export type TerminalQuickCommand = {
   scope?: TerminalQuickCommandScope
 }
 
+export type TerminalMacroLayout = 'tab' | 'split-right' | 'split-down'
+
+export type TerminalMacro = {
+  id: string
+  name: string
+  layout: TerminalMacroLayout
+  command: string
+  appendEnter: boolean
+  splitCommand?: string
+  splitAppendEnter?: boolean
+}
+
 export type OpenInApplication = {
   id: string
   label: string
@@ -1459,6 +1471,7 @@ export type GlobalSettings = {
   terminalWordSeparator?: string
   terminalCursorOpacity?: number
   terminalQuickCommands?: TerminalQuickCommand[]
+  terminalMacros?: TerminalMacro[]
   windowBackgroundBlur?: boolean
   /** Why: Windows terminals conventionally use right-click as a paste gesture.
    *  The setting stays Windows-only so macOS/Linux keep their existing context

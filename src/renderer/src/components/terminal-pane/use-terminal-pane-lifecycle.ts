@@ -73,7 +73,7 @@ type UseTerminalPaneLifecycleDeps = {
    *  (vertical or horizontal per the user setting) to run the setup command —
    *  keeping the main terminal interactive. */
   setupSplit?: {
-    command: string
+    command?: string
     env?: Record<string, string>
     direction: SetupSplitDirection
   } | null
@@ -909,11 +909,13 @@ export function useTerminalPaneLifecycle({
 
     if (setupSplit) {
       if (initialPane) {
-        const setupPane = splitPaneWithOneShotStartup(
-          ptyDeps,
-          { command: setupSplit.command, env: setupSplit.env },
-          () => manager.splitPane(initialPane.id, setupSplit.direction)
-        )
+        const setupPane = setupSplit.command
+          ? splitPaneWithOneShotStartup(
+              ptyDeps,
+              { command: setupSplit.command, env: setupSplit.env },
+              () => manager.splitPane(initialPane.id, setupSplit.direction)
+            )
+          : manager.splitPane(initialPane.id, setupSplit.direction)
         issueAutomationAnchorPaneId = setupPane?.id ?? null
         // Restore focus to the main pane so the user's terminal receives
         // keyboard input — the setup pane runs unattended.

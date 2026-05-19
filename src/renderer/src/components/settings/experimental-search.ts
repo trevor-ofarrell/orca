@@ -47,6 +47,21 @@ export const EXPERIMENTAL_PANE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
       'env',
       'node_modules'
     ]
+  },
+  {
+    title: 'Terminal Macros',
+    description:
+      'Named terminal launch presets that open a tab and optional startup split from the new-tab menu.',
+    keywords: [
+      'experimental',
+      'terminal',
+      'macro',
+      'macros',
+      'launch',
+      'preset',
+      'split',
+      'workflow'
+    ]
   }
 ]
 
@@ -64,5 +79,6 @@ function findEntry(title: string): SettingsSearchEntry {
 export const EXPERIMENTAL_SEARCH_ENTRY = {
   pet: findEntry('Pet'),
   activity: findEntry('Agents View'),
-  symlinks: findEntry('Symlinks on worktrees')
+  symlinks: findEntry('Symlinks on worktrees'),
+  terminalMacros: findEntry('Terminal Macros')
 } as const

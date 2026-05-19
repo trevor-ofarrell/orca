@@ -75,6 +75,7 @@ import { agentHookServer } from './agent-hooks/server'
 import { pruneLocalTerminalScrollbackBuffers } from '../shared/workspace-session-terminal-buffers'
 import { pruneWorkspaceSessionBrowserHistory } from '../shared/workspace-session-browser-history'
 import { getRepoIdFromWorktreeId, getWorktreePathBasenameFromId } from '../shared/worktree-id'
+import { normalizeTerminalMacros } from '../shared/terminal-macros'
 import { normalizeTerminalQuickCommands } from '../shared/terminal-quick-commands'
 import { normalizeVisibleTaskProviders } from '../shared/task-providers'
 import { normalizeOpenInApplications } from '../shared/open-in-applications'
@@ -1238,6 +1239,7 @@ export class Store {
             terminalQuickCommands: normalizeTerminalQuickCommands(
               parsed.settings?.terminalQuickCommands
             ),
+            terminalMacros: normalizeTerminalMacros(parsed.settings?.terminalMacros),
             visibleTaskProviders: normalizeVisibleTaskProviders(
               parsed.settings?.visibleTaskProviders
             ),
@@ -2115,6 +2117,9 @@ export class Store {
       sanitizedUpdates.terminalQuickCommands = normalizeTerminalQuickCommands(
         updates.terminalQuickCommands
       )
+    }
+    if ('terminalMacros' in updates) {
+      sanitizedUpdates.terminalMacros = normalizeTerminalMacros(updates.terminalMacros)
     }
     if ('visibleTaskProviders' in updates) {
       sanitizedUpdates.visibleTaskProviders = normalizeVisibleTaskProviders(

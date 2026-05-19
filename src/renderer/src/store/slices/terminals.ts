@@ -150,7 +150,7 @@ export type TerminalSlice = {
    *  immediately interactive. */
   pendingSetupSplitByTabId: Record<
     string,
-    { command: string; env?: Record<string, string>; direction: SetupSplitDirection }
+    { command?: string; env?: Record<string, string>; direction: SetupSplitDirection }
   >
   /** Queued issue-command-split requests — similar to setup splits but triggered
    *  when an issue is linked during worktree creation and the repo's issue
@@ -260,11 +260,11 @@ export type TerminalSlice = {
   ) => { command: string; env?: Record<string, string>; telemetry?: AgentStartedTelemetry } | null
   queueTabSetupSplit: (
     tabId: string,
-    startup: { command: string; env?: Record<string, string>; direction: SetupSplitDirection }
+    startup: { command?: string; env?: Record<string, string>; direction: SetupSplitDirection }
   ) => void
   consumeTabSetupSplit: (
     tabId: string
-  ) => { command: string; env?: Record<string, string>; direction: SetupSplitDirection } | null
+  ) => { command?: string; env?: Record<string, string>; direction: SetupSplitDirection } | null
   queueTabIssueCommandSplit: (
     tabId: string,
     issueCommand: { command: string; env?: Record<string, string> }

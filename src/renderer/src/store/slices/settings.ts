@@ -7,6 +7,7 @@ import {
   getRemoteRuntimePtyEnvironmentId,
   getRemoteRuntimeTerminalHandle
 } from '@/runtime/runtime-terminal-stream'
+import { normalizeTerminalMacros } from '../../../../shared/terminal-macros'
 import { normalizeTerminalQuickCommands } from '../../../../shared/terminal-quick-commands'
 import { normalizeVisibleTaskProviders } from '../../../../shared/task-providers'
 import { normalizeOpenInApplications } from '../../../../shared/open-in-applications'
@@ -243,6 +244,9 @@ export const createSettingsSlice: StateCreator<AppState, [], [], SettingsSlice> 
         sanitizedUpdates.terminalQuickCommands = normalizeTerminalQuickCommands(
           updates.terminalQuickCommands
         )
+      }
+      if ('terminalMacros' in updates) {
+        sanitizedUpdates.terminalMacros = normalizeTerminalMacros(updates.terminalMacros)
       }
       if ('visibleTaskProviders' in updates) {
         sanitizedUpdates.visibleTaskProviders = normalizeVisibleTaskProviders(

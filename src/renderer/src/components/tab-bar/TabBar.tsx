@@ -5,7 +5,7 @@
  * more clarity than the ~5 lines of bloat is worth. */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { SortableContext } from '@dnd-kit/sortable'
-import { FilePlus, Globe, Plus, TerminalSquare } from 'lucide-react'
+import { FilePlus, Globe, Plus, Settings as SettingsIcon, TerminalSquare } from 'lucide-react'
 import type {
   BrowserTab as BrowserTabState,
   TerminalTab,
@@ -31,9 +31,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuShortcut,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { launchTerminalMacro } from '@/lib/launch-terminal-macro'
 
 const isMac = navigator.userAgent.includes('Mac')
 const isWindows = navigator.userAgent.includes('Windows')
@@ -152,6 +156,9 @@ function TabBarInner({
   const defaultWindowsPowerShellImplementation = useAppStore(
     (s) => s.settings?.terminalWindowsPowerShellImplementation ?? 'auto'
   )
+  const terminalMacros = useAppStore((s) => s.settings?.terminalMacros ?? [])
+  const openSettingsPage = useAppStore((s) => s.openSettingsPage)
+  const openSettingsTarget = useAppStore((s) => s.openSettingsTarget)
   const [pwshAvailable, setPwshAvailable] = useState(false)
   useEffect(() => {
     if (!isWindows) {
@@ -162,6 +169,10 @@ function TabBarInner({
     void window.api.pwsh.isAvailable().then(setPwshAvailable)
   }, [])
   const resolvedGroupId = groupId ?? worktreeId
+  const launchableTerminalMacros = useMemo(
+    () => terminalMacros.filter((macro) => macro.name.trim().length > 0),
+    [terminalMacros]
+  )
 
   const statusByRelativePath = useMemo(
     () => buildStatusMap(gitStatusByWorktree[worktreeId] ?? []),
@@ -577,6 +588,55 @@ function TabBarInner({
               />
             </>
           ) : null}
+          <DropdownMenuSeparator />
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium">
+              <TerminalSquare className="size-4 text-muted-foreground" />
+              Macros
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-[15rem] rounded-[11px] border-border/80 p-1 shadow-[0_16px_36px_rgba(0,0,0,0.24)]">
+              {launchableTerminalMacros.length === 0 ? (
+                <DropdownMenuItem
+                  disabled
+                  className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 text-muted-foreground"
+                >
+                  No macros saved
+                </DropdownMenuItem>
+              ) : (
+                launchableTerminalMacros.map((macro) => (
+                  <DropdownMenuItem
+                    key={macro.id}
+                    onSelect={() => {
+                      const launched = launchTerminalMacro({
+                        macro,
+                        worktreeId,
+                        groupId: resolvedGroupId
+                      })
+                      if (launched) {
+                        focusTerminalTabSurface(launched.tabId)
+                      }
+                    }}
+                    className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
+                    title={`Run ${macro.name}`}
+                  >
+                    <TerminalSquare className="size-4 text-muted-foreground" />
+                    <span className="flex-1 truncate">{macro.name}</span>
+                  </DropdownMenuItem>
+                ))
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  openSettingsTarget({ pane: 'terminal', repoId: null, sectionId: 'macros' })
+                  openSettingsPage()
+                }}
+                className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium text-muted-foreground"
+              >
+                <SettingsIcon className="size-4" />
+                Manage Macros…
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
