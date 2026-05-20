@@ -31,9 +31,10 @@ export type TaskProviderAvailability = {
 
 export function filterAvailableTaskProviders(
   visibleProviders: readonly TaskProvider[],
-  availability: TaskProviderAvailability
+  availability: TaskProviderAvailability,
+  preferredProvider?: TaskProvider | null
 ): TaskProvider[] {
-  const available = visibleProviders.filter((provider) => {
+  const isProviderAvailable = (provider: TaskProvider): boolean => {
     if (provider === 'github') {
       return true
     }
@@ -41,7 +42,21 @@ export function filterAvailableTaskProviders(
       return availability.gitlabInstalled
     }
     return availability.linearConnected
-  })
+  }
+
+  const available = visibleProviders.filter(isProviderAvailable)
+
+  // Why: older or drifted settings can hide the saved default while another
+  // provider becomes available. Keep that default reachable after hydration.
+  if (
+    preferredProvider &&
+    isProviderAvailable(preferredProvider) &&
+    !available.includes(preferredProvider)
+  ) {
+    return TASK_PROVIDERS.filter(
+      (provider) => provider === preferredProvider || available.includes(provider)
+    )
+  }
 
   return available.length > 0 ? available : ['github']
 }
