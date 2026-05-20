@@ -1725,10 +1725,7 @@ export async function getPRForBranchOutcome(
           data = linkedData
           dataRepo = candidate
           break
-        } catch (err) {
-          if (shouldStopAfterExactLookupError(err)) {
-            throw err
-          }
+        } catch {
           // Candidate probing is best-effort; another repo may own the PR.
         }
       }
