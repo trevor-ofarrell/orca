@@ -39,9 +39,9 @@ export function createBellDetector(): BellDetector {
   ): BellDetectionResult => {
     const stripBells = options.stripBells === true
     let containsBell = false
-    let strippedSegments: string[] | null = null
-    let stripSegmentStart = 0
-    let strippedAny = false
+    let outputSegments: string[] | null = null
+    let outputSegmentStart = 0
+    let outputChanged = false
 
     for (let i = 0; i < data.length; i += 1) {
       const char = data[i]
@@ -49,12 +49,24 @@ export function createBellDetector(): BellDetector {
         if (!stripBells) {
           return
         }
-        strippedAny = true
-        strippedSegments ??= []
-        if (stripSegmentStart < i) {
-          strippedSegments.push(data.slice(stripSegmentStart, i))
+        outputChanged = true
+        outputSegments ??= []
+        if (outputSegmentStart < i) {
+          outputSegments.push(data.slice(outputSegmentStart, i))
         }
-        stripSegmentStart = i + 1
+        outputSegmentStart = i + 1
+      }
+      const replaceCurrentChar = (replacement: string): void => {
+        if (!stripBells) {
+          return
+        }
+        outputChanged = true
+        outputSegments ??= []
+        if (outputSegmentStart < i) {
+          outputSegments.push(data.slice(outputSegmentStart, i))
+        }
+        outputSegments.push(replacement)
+        outputSegmentStart = i + 1
       }
 
       if (inOsc) {
@@ -77,6 +89,11 @@ export function createBellDetector(): BellDetector {
 
         if (char === '\x07') {
           inOsc = false
+          // Why: BEL can legally terminate OSC sequences, but it is still a
+          // raw BEL byte at the terminal write boundary. When audible bells
+          // are disabled, use the equivalent ST terminator so titles/status
+          // parse without any BEL byte reaching xterm/Electron.
+          replaceCurrentChar('\x1b\\')
           continue
         }
 
@@ -123,15 +140,20 @@ export function createBellDetector(): BellDetector {
       }
     }
 
-    if (stripBells && strippedAny) {
-      if (stripSegmentStart < data.length) {
-        strippedSegments?.push(data.slice(stripSegmentStart))
+    if (stripBells && outputChanged) {
+      const segments: string[] = outputSegments ?? []
+      if (outputSegmentStart < data.length) {
+        segments.push(data.slice(outputSegmentStart))
+      }
+      return {
+        containsBell,
+        data: segments.join('')
       }
     }
 
     return {
       containsBell,
-      data: stripBells && strippedAny ? (strippedSegments ?? []).join('') : data
+      data
     }
   }
 

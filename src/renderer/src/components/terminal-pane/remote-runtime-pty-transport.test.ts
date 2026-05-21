@@ -542,7 +542,7 @@ describe('createRemoteRuntimePtyTransport', () => {
     const { streamId } = latestSubscribePayload()
     emitOutput(streamId, 'before\x1b]0;Remote done\x07\x07after')
 
-    expect(onData).toHaveBeenCalledWith('before\x1b]0;Remote done\x07after')
+    expect(onData).toHaveBeenCalledWith('before\x1b]0;Remote done\x1b\\after')
     expect(onTitleChange).toHaveBeenCalledWith('Remote done', 'Remote done')
     expect(onBell).toHaveBeenCalledTimes(1)
   })
@@ -873,7 +873,7 @@ describe('createRemoteRuntimePtyTransport', () => {
       'before\x1b]9999;{"state":"working","prompt":"old","agentType":"codex"}\x07after\x1b]0;Remote title\x07\x07'
     )
 
-    expect(onReplayData).toHaveBeenCalledWith('beforeafter\x1b]0;Remote title\x07')
+    expect(onReplayData).toHaveBeenCalledWith('beforeafter\x1b]0;Remote title\x1b\\')
     expect(onTitleChange).toHaveBeenCalledWith('Remote title', 'Remote title')
     expect(onAgentStatus).not.toHaveBeenCalled()
     expect(onBell).not.toHaveBeenCalled()

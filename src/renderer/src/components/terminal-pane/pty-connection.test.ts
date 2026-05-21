@@ -1962,7 +1962,7 @@ describe('connectPanePty', () => {
     expect(window.api.pty.ackColdRestore).toHaveBeenCalledWith('tab-pty')
   })
 
-  it('strips audible BELs from reattach replay while preserving OSC terminators', async () => {
+  it('strips audible BELs from reattach replay while preserving OSC termination', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport()
     transport.connect.mockImplementation(async ({ sessionId }: { sessionId?: string }) => {
@@ -1993,7 +1993,7 @@ describe('connectPanePty', () => {
     await flushAsyncTicks(20)
 
     expect(pane.terminal.write).toHaveBeenCalledWith(
-      'before\x1b]0;Replay title\x07after',
+      'before\x1b]0;Replay title\x1b\\after',
       expect.any(Function)
     )
     expect(pane.terminal.write).not.toHaveBeenCalledWith(
@@ -2027,7 +2027,7 @@ describe('connectPanePty', () => {
     await flushAsyncTicks(20)
 
     expect(pane.terminal.write).toHaveBeenCalledWith(
-      'before\x1b]0;Relay title\x07after',
+      'before\x1b]0;Relay title\x1b\\after',
       expect.any(Function)
     )
     expect(pane.terminal.write).not.toHaveBeenCalledWith(

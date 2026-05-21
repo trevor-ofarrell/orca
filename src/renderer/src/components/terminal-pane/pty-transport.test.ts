@@ -172,10 +172,31 @@ describe('createIpcPtyTransport', () => {
 
     onData?.({ id: 'pty-1', data: ']0;Claude done' })
 
-    expect(onDataCallback).toHaveBeenCalledWith(']0;Claude done')
+    expect(onDataCallback).toHaveBeenCalledWith(']0;Claude done\\')
     expect(onTitleChange).toHaveBeenCalledWith('Claude done', 'Claude done')
     // Why: muting audible terminal output must not mute Orca's UI bell state.
     expect(onBell).toHaveBeenCalledTimes(1)
+  })
+
+  it('converts OSC BEL terminators to ST when terminal bells are silenced', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const onBell = vi.fn()
+    const onTitleChange = vi.fn()
+    const onDataCallback = vi.fn()
+
+    const transport = createIpcPtyTransport({
+      onBell,
+      onTitleChange,
+      shouldSilenceTerminalBell: () => true
+    })
+    await transport.connect({ url: '', callbacks: { onData: onDataCallback } })
+
+    onData?.({ id: 'pty-1', data: ']133;C]0;Codex done' })
+
+    expect(onDataCallback).toHaveBeenCalledWith(']133;C\\]0;Codex done\\')
+    expect(onDataCallback.mock.calls[0]?.[0]).not.toContain('')
+    expect(onTitleChange).toHaveBeenCalledWith('Codex done', 'Codex done')
+    expect(onBell).not.toHaveBeenCalled()
   })
 
   it('strips audible BELs when the OSC terminator and bell arrive in a later chunk', async () => {
@@ -195,7 +216,7 @@ describe('createIpcPtyTransport', () => {
     onData?.({ id: 'pty-1', data: '' })
 
     expect(onDataCallback).toHaveBeenNthCalledWith(1, ']0;Claude done')
-    expect(onDataCallback).toHaveBeenNthCalledWith(2, '')
+    expect(onDataCallback).toHaveBeenNthCalledWith(2, '\\')
     expect(onTitleChange).not.toHaveBeenCalled()
     expect(onBell).toHaveBeenCalledTimes(1)
   })

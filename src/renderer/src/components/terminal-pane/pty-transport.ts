@@ -146,7 +146,8 @@ export function createPtyOutputProcessor({
     const bellResult = bellDetector.processChunk(data, {
       // Why: BEL is terminal attention, not visible output. When audible bells
       // are disabled, keep bare BELs out of the terminal so this path cannot
-      // bypass Orca's sound policy. OSC terminators stay intact for titles.
+      // bypass Orca's sound policy. OSC BEL terminators are converted to ST
+      // so title/status parsing still works without writing any BEL byte.
       stripBells: suppressAttentionEvents || shouldSilenceTerminalBell?.() === true
     })
     const terminalData = bellResult.data

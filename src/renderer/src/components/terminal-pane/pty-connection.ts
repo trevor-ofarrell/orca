@@ -1118,7 +1118,8 @@ export function connectPanePty(
     const replayBellDetector = createBellDetector()
     const writeReplayData = (data: string): void => {
       // Why: replay bytes are historical output. They must not play a fresh
-      // local bell, but OSC terminator BELs still need to reach xterm intact.
+      // local bell. OSC BEL terminators are rewritten to ST so xterm still
+      // closes the OSC sequence without seeing any raw BEL byte.
       let replayData = replayBellDetector.processChunk(data, { stripBells: true }).data
       if (replayBellDetector.hasPendingEscapeSequence()) {
         // Why: replay buffers can be truncated mid-OSC. Cancel the historical
