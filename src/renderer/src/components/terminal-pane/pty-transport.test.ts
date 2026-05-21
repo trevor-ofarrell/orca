@@ -157,7 +157,7 @@ describe('createIpcPtyTransport', () => {
     expect(onBell).toHaveBeenCalledTimes(1)
   })
 
-  it('strips audible BELs before terminal output when terminal bells are silenced', async () => {
+  it('strips audible BELs before terminal output while preserving UI bell attention', async () => {
     const { createIpcPtyTransport } = await import('./pty-transport')
     const onBell = vi.fn()
     const onTitleChange = vi.fn()
@@ -174,6 +174,7 @@ describe('createIpcPtyTransport', () => {
 
     expect(onDataCallback).toHaveBeenCalledWith(']0;Claude done')
     expect(onTitleChange).toHaveBeenCalledWith('Claude done', 'Claude done')
+    // Why: muting audible terminal output must not mute Orca's UI bell state.
     expect(onBell).toHaveBeenCalledTimes(1)
   })
 
