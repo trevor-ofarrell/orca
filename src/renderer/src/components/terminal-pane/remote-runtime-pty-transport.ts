@@ -310,11 +310,15 @@ export function createRemoteRuntimePtyTransport(
       callbacks: {
         onData: (data) => outputProcessor.processData(data, storedCallbacks),
         onSnapshot: (data) => {
-          if (data) {
-            outputProcessor.processData(data, storedCallbacks, {
-              replayingBufferedData: true,
-              suppressAttentionEvents: true
-            })
+          try {
+            if (data) {
+              outputProcessor.processData(data, storedCallbacks, {
+                replayingBufferedData: true,
+                suppressAttentionEvents: true
+              })
+            }
+          } finally {
+            outputProcessor.resetReplayState()
           }
         },
         onSubscribed: () => {

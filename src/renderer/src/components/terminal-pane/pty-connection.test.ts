@@ -71,6 +71,7 @@ type StoreState = {
 
 type ConnectCallbacks = {
   onData?: (data: string) => void
+  onReplayData?: (data: string) => void
   onError?: (msg: string) => void
 }
 
@@ -1959,6 +1960,114 @@ describe('connectPanePty', () => {
     // the daemon does not redeliver the cold-restore payload on the next
     // reattach.
     expect(window.api.pty.ackColdRestore).toHaveBeenCalledWith('tab-pty')
+  })
+
+  it('strips audible BELs from reattach replay while preserving OSC terminators', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    transport.connect.mockImplementation(async ({ sessionId }: { sessionId?: string }) => {
+      if (sessionId) {
+        return {
+          id: sessionId,
+          replay: 'before\x1b]0;Replay title\x07\x07after'
+        }
+      }
+      return null
+    })
+    transportFactoryQueue.push(transport)
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: {
+        'wt-1': [{ id: 'tab-1', ptyId: 'tab-pty' }]
+      }
+    } as StoreState
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps({
+      restoredLeafId: LEAF_1,
+      restoredPtyIdByLeafId: { [LEAF_1]: 'tab-pty' }
+    })
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(20)
+
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      'before\x1b]0;Replay title\x07after',
+      expect.any(Function)
+    )
+    expect(pane.terminal.write).not.toHaveBeenCalledWith(
+      'before\x1b]0;Replay title\x07\x07after',
+      expect.any(Function)
+    )
+  })
+
+  it('strips audible BELs from relay replay callbacks before writing into xterm', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    transport.connect.mockImplementation(
+      async ({ callbacks }: { callbacks?: ConnectCallbacks }) => {
+        callbacks?.onReplayData?.('before\x1b]0;Relay title\x07\x07after')
+        return 'pty-1'
+      }
+    )
+    transportFactoryQueue.push(transport)
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: {
+        'wt-1': [{ id: 'tab-1', ptyId: null }]
+      }
+    } as StoreState
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(20)
+
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      'before\x1b]0;Relay title\x07after',
+      expect.any(Function)
+    )
+    expect(pane.terminal.write).not.toHaveBeenCalledWith(
+      'before\x1b]0;Relay title\x07\x07after',
+      expect.any(Function)
+    )
+  })
+
+  it('cancels incomplete OSC replay before live terminal output resumes', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+    transport.connect.mockImplementation(
+      async ({ callbacks }: { callbacks?: ConnectCallbacks }) => {
+        callbacks?.onReplayData?.('\x1b]0;unterminated replay title')
+        capturedDataCallback.current = callbacks?.onData ?? null
+        return 'pty-1'
+      }
+    )
+    transportFactoryQueue.push(transport)
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: {
+        'wt-1': [{ id: 'tab-1', ptyId: null }]
+      }
+    } as StoreState
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(20)
+    capturedDataCallback.current?.('\x07live output')
+
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      '\x1b]0;unterminated replay title\x18',
+      expect.any(Function)
+    )
+    expect(pane.terminal.write).toHaveBeenCalledWith('\x07live output')
   })
 
   // Regression for foreground input lag with many background terminals:

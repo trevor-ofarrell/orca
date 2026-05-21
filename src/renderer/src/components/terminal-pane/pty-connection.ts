@@ -45,6 +45,7 @@ import {
   type AgentInterruptInputIntent
 } from '../../../../shared/agent-interrupt-intent'
 import { createAgentCompletionCoordinator } from './agent-completion-coordinator'
+import { createBellDetector } from './bell-detector'
 
 const pendingSpawnByPaneKey = new Map<string, Promise<string | null>>()
 const SSH_SESSION_EXPIRED_ERROR = 'SSH_SESSION_EXPIRED'
@@ -1114,14 +1115,24 @@ export function connectPanePty(
     // sequences don't leak into the shell. xterm.write() buffers internally
     // regardless of DOM visibility and the guard stays engaged via the
     // write-completion callback until xterm finishes parsing.
+    const replayBellDetector = createBellDetector()
     const writeReplayData = (data: string): void => {
+      // Why: replay bytes are historical output. They must not play a fresh
+      // local bell, but OSC terminator BELs still need to reach xterm intact.
+      let replayData = replayBellDetector.processChunk(data, { stripBells: true }).data
+      if (replayBellDetector.hasPendingEscapeSequence()) {
+        // Why: replay buffers can be truncated mid-OSC. Cancel the historical
+        // sequence now so live BEL filtering cannot strand xterm inside it.
+        replayData += '\x18'
+        replayBellDetector.reset()
+      }
       // Why: drain any queued background bytes BEFORE the replay paint, so the
       // scheduler's deferred drain cannot land older bytes on top of the replay.
       flushTerminalOutput(pane.terminal)
-      if (terminalOutputPrefersDomRenderer(data)) {
+      if (terminalOutputPrefersDomRenderer(replayData)) {
         manager.markPaneHasComplexScriptOutput(pane.id)
       }
-      replayIntoTerminal(pane, deps.replayingPanesRef, data)
+      replayIntoTerminal(pane, deps.replayingPanesRef, replayData)
     }
 
     const replayDataCallback = (data: string): void => {

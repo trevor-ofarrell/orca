@@ -19,6 +19,7 @@
 export type BellDetector = {
   processChunk(data: string, options?: { stripBells?: boolean }): BellDetectionResult
   chunkContainsBell(data: string): boolean
+  hasPendingEscapeSequence(): boolean
   reset(): void
 }
 
@@ -133,6 +134,9 @@ export function createBellDetector(): BellDetector {
     processChunk,
     chunkContainsBell(data: string): boolean {
       return processChunk(data).containsBell
+    },
+    hasPendingEscapeSequence(): boolean {
+      return pendingEscape || inOsc || pendingOscEscape
     },
     reset(): void {
       pendingEscape = false

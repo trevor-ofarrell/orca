@@ -78,10 +78,10 @@ export function createPtyOutputProcessor({
   ) => void
   clearAccumulatedState: () => void
   clearStaleTitleTimer: () => void
-  resetBellDetector: () => void
+  resetReplayState: () => void
 } {
   const bellDetector = createBellDetector()
-  const processAgentStatusChunk = createAgentStatusOscProcessor()
+  let processAgentStatusChunk = createAgentStatusOscProcessor()
   let lastEmittedTitle: string | null = null
   let staleTitleTimer: ReturnType<typeof setTimeout> | null = null
   const agentTracker =
@@ -197,6 +197,14 @@ export function createPtyOutputProcessor({
   function clearAccumulatedState(): void {
     clearStaleTitleTimer()
     agentTracker?.reset()
+    processAgentStatusChunk = createAgentStatusOscProcessor()
+    bellDetector.reset()
+  }
+
+  function resetReplayState(): void {
+    // Why: replay buffers are historical bytes. Parser state from a truncated
+    // replay sequence must not carry into the following live PTY stream.
+    processAgentStatusChunk = createAgentStatusOscProcessor()
     bellDetector.reset()
   }
 
@@ -204,7 +212,7 @@ export function createPtyOutputProcessor({
     processData,
     clearAccumulatedState,
     clearStaleTitleTimer,
-    resetBellDetector: () => bellDetector.reset()
+    resetReplayState
   }
 }
 
@@ -462,13 +470,7 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
             // that was never live in this app instance. Cancel it so the replay has
             // no lingering side effects.
             outputProcessor.clearStaleTitleTimer()
-            // Why: eager-buffered bytes may end mid-OSC (truncated/partial session
-            // data), leaving bellDetector with inOsc = true. Without resetting, the
-            // next real BEL in live data would be silently classified as an OSC
-            // terminator and dropped. BEL is the sole attention signal per the PR
-            // design, so this reset guards the attention pipeline against a silent
-            // regression driven by replay state leaking into the live stream.
-            outputProcessor.resetBellDetector()
+            outputProcessor.resetReplayState()
           }
         }
         bufferHandle.dispose()

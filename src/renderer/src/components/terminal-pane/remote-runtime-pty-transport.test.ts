@@ -907,6 +907,28 @@ describe('createRemoteRuntimePtyTransport', () => {
     expect(onConnect).toHaveBeenCalled()
   })
 
+  it('resets replay parser state after an incomplete remote snapshot', async () => {
+    const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+    const onReplayData = vi.fn()
+    const onData = vi.fn()
+    const onBell = vi.fn()
+    const transport = createRemoteRuntimePtyTransport('env-1', {
+      worktreeId: 'wt-1',
+      onBell,
+      shouldSilenceTerminalBell: () => true
+    })
+
+    await transport.connect({ url: '', callbacks: { onReplayData, onData } })
+    await vi.waitFor(() => expect(subscriptionSendBinary).toHaveBeenCalled())
+    const { streamId } = latestSubscribePayload()
+    emitSnapshot(streamId, '\x1b]0;unterminated remote title')
+    emitOutput(streamId, '\x07live output')
+
+    expect(onReplayData).toHaveBeenCalledWith('\x1b]0;unterminated remote title')
+    expect(onData).toHaveBeenCalledWith('live output')
+    expect(onBell).toHaveBeenCalledTimes(1)
+  })
+
   it('bounds oversized binary snapshots without closing the live stream', async () => {
     const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
     const onReplayData = vi.fn()
