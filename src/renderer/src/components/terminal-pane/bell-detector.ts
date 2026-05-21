@@ -39,15 +39,22 @@ export function createBellDetector(): BellDetector {
   ): BellDetectionResult => {
     const stripBells = options.stripBells === true
     let containsBell = false
-    let strippedData = ''
+    let strippedSegments: string[] | null = null
+    let stripSegmentStart = 0
     let strippedAny = false
 
     for (let i = 0; i < data.length; i += 1) {
       const char = data[i]
-      const append = (): void => {
-        if (stripBells) {
-          strippedData += char
+      const stripCurrentChar = (): void => {
+        if (!stripBells) {
+          return
         }
+        strippedAny = true
+        strippedSegments ??= []
+        if (stripSegmentStart < i) {
+          strippedSegments.push(data.slice(stripSegmentStart, i))
+        }
+        stripSegmentStart = i + 1
       }
 
       if (inOsc) {
@@ -56,7 +63,6 @@ export function createBellDetector(): BellDetector {
           // so a malformed/truncated OSC does not swallow the next BEL.
           inOsc = false
           pendingOscEscape = false
-          append()
           continue
         }
 
@@ -66,18 +72,15 @@ export function createBellDetector(): BellDetector {
             inOsc = false
             pendingOscEscape = false
           }
-          append()
           continue
         }
 
         if (char === '\x07') {
           inOsc = false
-          append()
           continue
         }
 
         pendingOscEscape = char === '\x1b'
-        append()
         continue
       }
 
@@ -85,7 +88,6 @@ export function createBellDetector(): BellDetector {
         if (char === '\x18' || char === '\x1a') {
           // ECMA-48 escape-cancel codes also abort a pending ESC.
           pendingEscape = false
-          append()
           continue
         }
         pendingEscape = false
@@ -100,33 +102,36 @@ export function createBellDetector(): BellDetector {
           // bell rather than silently swallowing it with the orphan ESC.
           containsBell = true
           if (stripBells) {
-            strippedAny = true
+            stripCurrentChar()
             continue
           }
         }
-        append()
         continue
       }
 
       if (char === '\x1b') {
         pendingEscape = true
-        append()
         continue
       }
 
       if (char === '\x07') {
         containsBell = true
         if (stripBells) {
-          strippedAny = true
+          stripCurrentChar()
           continue
         }
       }
-      append()
+    }
+
+    if (stripBells && strippedAny) {
+      if (stripSegmentStart < data.length) {
+        strippedSegments?.push(data.slice(stripSegmentStart))
+      }
     }
 
     return {
       containsBell,
-      data: stripBells && strippedAny ? strippedData : data
+      data: stripBells && strippedAny ? (strippedSegments ?? []).join('') : data
     }
   }
 
