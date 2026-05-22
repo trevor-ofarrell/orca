@@ -1,3 +1,5 @@
+/* eslint-disable max-lines -- Why: web preload parity tests share module-reset
+global setup across namespaces so browser API installation stays realistic. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PreloadApi } from '../../../preload/api-types'
 import type { RuntimeRpcResponse } from '../../../shared/runtime-rpc-envelope'
@@ -176,6 +178,145 @@ describe('web GitLab preload API', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.doUnmock('./web-runtime-client')
+    vi.doUnmock('electron')
+  })
+
+  it('keeps the web GitLab preload key set in parity with desktop preload', async () => {
+    vi.doMock('electron', () => ({
+      ipcRenderer: { invoke: vi.fn() }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    const preloadModulePath = new URL('../../../preload/gitlab.ts', import.meta.url).pathname
+    const { glApi } = (await import(preloadModulePath)) as { glApi: Record<string, unknown> }
+    const { installWebPreloadApi } = await import('./web-preload-api')
+
+    installWebPreloadApi()
+
+    expect(Object.keys(globals.window.api.gl).sort()).toEqual(Object.keys(glApi).sort())
+  })
+
+  it('routes every runtime-backed GitLab method through the expected RPC method', async () => {
+    type GitLabApi = NonNullable<PreloadApi['gl']>
+    const runtimeCalls: { method: string; params: unknown }[] = []
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string, params?: unknown): Promise<RuntimeRpcResponse<unknown>> {
+          runtimeCalls.push({ method, params })
+          return Promise.resolve({
+            id: `call-${runtimeCalls.length}`,
+            ok: true,
+            result: { ok: true, items: [] },
+            _meta: { runtimeId: 'runtime-1' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage)
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+    const api = globals.window.api
+    const repoPath = '/workspace/repo'
+
+    const routeCases: {
+      invoke: (gl: GitLabApi) => Promise<unknown>
+      expectedMethod: string
+      expectedParams: unknown
+    }[] = [
+      {
+        invoke: (gl) => gl.listMRs({ repoPath, state: 'opened', page: 1, perPage: 50 }),
+        expectedMethod: 'gitlab.listMRs',
+        expectedParams: { repoPath, repo: repoPath, state: 'opened', page: 1, perPage: 50 }
+      },
+      {
+        invoke: (gl) => gl.listWorkItems({ repoPath, state: 'closed', page: 2, perPage: 25 }),
+        expectedMethod: 'gitlab.listWorkItems',
+        expectedParams: { repoPath, repo: repoPath, state: 'closed', page: 2, perPage: 25 }
+      },
+      {
+        invoke: (gl) => gl.listIssues({ repoPath, state: 'all', assignee: '@me', limit: 30 }),
+        expectedMethod: 'gitlab.listIssues',
+        expectedParams: { repoPath, repo: repoPath, state: 'all', assignee: '@me', limit: 30 }
+      },
+      {
+        invoke: (gl) => gl.createIssue({ repoPath, title: 'Bug', body: 'Details' }),
+        expectedMethod: 'gitlab.createIssue',
+        expectedParams: { repoPath, repo: repoPath, title: 'Bug', body: 'Details' }
+      },
+      {
+        invoke: (gl) => gl.updateIssue({ repoPath, number: 7, updates: { state: 'closed' } }),
+        expectedMethod: 'gitlab.updateIssue',
+        expectedParams: { repoPath, repo: repoPath, number: 7, updates: { state: 'closed' } }
+      },
+      {
+        invoke: (gl) => gl.addIssueComment({ repoPath, number: 7, body: 'Fixed' }),
+        expectedMethod: 'gitlab.addIssueComment',
+        expectedParams: { repoPath, repo: repoPath, number: 7, body: 'Fixed' }
+      },
+      {
+        invoke: (gl) => gl.todos({ repoPath }),
+        expectedMethod: 'gitlab.todos',
+        expectedParams: { repoPath, repo: repoPath }
+      },
+      {
+        invoke: (gl) => gl.workItemDetails({ repoPath, iid: 8, type: 'mr' }),
+        expectedMethod: 'gitlab.workItemDetails',
+        expectedParams: { repoPath, repo: repoPath, iid: 8, type: 'mr' }
+      },
+      {
+        invoke: (gl) => gl.closeMR({ repoPath, iid: 8 }),
+        expectedMethod: 'gitlab.updateMRState',
+        expectedParams: { repoPath, repo: repoPath, iid: 8, state: 'closed' }
+      },
+      {
+        invoke: (gl) => gl.reopenMR({ repoPath, iid: 8 }),
+        expectedMethod: 'gitlab.updateMRState',
+        expectedParams: { repoPath, repo: repoPath, iid: 8, state: 'opened' }
+      },
+      {
+        invoke: (gl) => gl.mergeMR({ repoPath, iid: 8, method: 'squash' }),
+        expectedMethod: 'gitlab.mergeMR',
+        expectedParams: { repoPath, repo: repoPath, iid: 8, method: 'squash' }
+      },
+      {
+        invoke: (gl) => gl.addMRComment({ repoPath, iid: 8, body: 'Ship it' }),
+        expectedMethod: 'gitlab.addMRComment',
+        expectedParams: { repoPath, repo: repoPath, iid: 8, body: 'Ship it' }
+      },
+      {
+        invoke: (gl) =>
+          gl.workItemByPath({
+            repoPath,
+            host: 'gitlab.example.com',
+            path: 'group/project',
+            iid: 7,
+            type: 'issue'
+          }),
+        expectedMethod: 'gitlab.workItemByPath',
+        expectedParams: {
+          repoPath,
+          repo: repoPath,
+          host: 'gitlab.example.com',
+          path: 'group/project',
+          iid: 7,
+          type: 'issue'
+        }
+      }
+    ]
+
+    for (const routeCase of routeCases) {
+      await routeCase.invoke(api.gl)
+    }
+
+    expect(runtimeCalls).toEqual(
+      routeCases.map((routeCase) => ({
+        method: routeCase.expectedMethod,
+        params: routeCase.expectedParams
+      }))
+    )
   })
 
   it('exposes the GitLab task methods used by the shared Tasks page', async () => {
@@ -184,16 +325,31 @@ describe('web GitLab preload API', () => {
       WebRuntimeClient: class {
         call(method: string, params?: unknown): Promise<RuntimeRpcResponse<unknown>> {
           runtimeCalls.push({ method, params })
-          if (method === 'gitlab.listWorkItems') {
+          if (method === 'gitlab.listMRs') {
             return Promise.resolve({
               id: `call-${runtimeCalls.length}`,
               ok: true,
               result: {
-                items: [
-                  { id: 'mr-1', type: 'mr', number: 1 },
-                  { id: 'issue-2', type: 'issue', number: 2 }
-                ]
+                items: [{ id: 'mr-1', type: 'mr', number: 1 }]
               },
+              _meta: { runtimeId: 'runtime-1' }
+            })
+          }
+          if (method === 'gitlab.listIssues') {
+            return Promise.resolve({
+              id: `call-${runtimeCalls.length}`,
+              ok: true,
+              result: {
+                items: [{ id: 'issue-2', type: 'issue', number: 2 }]
+              },
+              _meta: { runtimeId: 'runtime-1' }
+            })
+          }
+          if (method === 'gitlab.workItemByPath') {
+            return Promise.resolve({
+              id: `call-${runtimeCalls.length}`,
+              ok: true,
+              result: { id: 'issue-7', type: 'issue', number: 7 },
               _meta: { runtimeId: 'runtime-1' }
             })
           }
@@ -224,15 +380,25 @@ describe('web GitLab preload API', () => {
     const issues = await api.gl.listIssues({
       repoPath: '/workspace/repo',
       state: 'opened',
+      assignee: '@me',
       limit: 50
+    })
+    const item = await api.gl.workItemByPath({
+      repoPath: '/workspace/repo',
+      host: 'gitlab.example.com',
+      path: 'group/project',
+      iid: 7,
+      type: 'issue'
     })
     await api.gl.closeMR({ repoPath: '/workspace/repo', iid: 7 })
 
     expect(mergeRequests.items).toEqual([{ id: 'mr-1', type: 'mr', number: 1 }])
     expect(issues.items).toEqual([{ id: 'issue-2', type: 'issue', number: 2 }])
+    expect(item).toEqual({ id: 'issue-7', type: 'issue', number: 7 })
+    expect(runtimeCalls.map((call) => call.method)).not.toContain('gitlab.listWorkItems')
     expect(runtimeCalls).toEqual([
       {
-        method: 'gitlab.listWorkItems',
+        method: 'gitlab.listMRs',
         params: {
           repoPath: '/workspace/repo',
           repo: '/workspace/repo',
@@ -242,12 +408,24 @@ describe('web GitLab preload API', () => {
         }
       },
       {
-        method: 'gitlab.listWorkItems',
+        method: 'gitlab.listIssues',
         params: {
           repoPath: '/workspace/repo',
           repo: '/workspace/repo',
           state: 'opened',
+          assignee: '@me',
           limit: 50
+        }
+      },
+      {
+        method: 'gitlab.workItemByPath',
+        params: {
+          repoPath: '/workspace/repo',
+          repo: '/workspace/repo',
+          host: 'gitlab.example.com',
+          path: 'group/project',
+          iid: 7,
+          type: 'issue'
         }
       },
       {

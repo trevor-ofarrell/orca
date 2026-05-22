@@ -72,11 +72,56 @@ const runtimeCallQueuePool = new RuntimeRpcCallQueuePool()
 
 type WebSettingsApi = NonNullable<PreloadApi['settings']>
 type WebKeybindingsApi = NonNullable<PreloadApi['keybindings']>
+type WebGitLabApi = NonNullable<PreloadApi['gl']>
+type WebGitLabResult<K extends keyof WebGitLabApi> = Awaited<ReturnType<WebGitLabApi[K]>>
+type WebGitLabRouteKey =
+  | 'listMRs'
+  | 'listWorkItems'
+  | 'listIssues'
+  | 'createIssue'
+  | 'updateIssue'
+  | 'addIssueComment'
+  | 'todos'
+  | 'workItemDetails'
+  | 'closeMR'
+  | 'reopenMR'
+  | 'mergeMR'
+  | 'addMRComment'
+  | 'workItemByPath'
+type WebGitLabRuntimeMethod =
+  | 'gitlab.listMRs'
+  | 'gitlab.listWorkItems'
+  | 'gitlab.listIssues'
+  | 'gitlab.createIssue'
+  | 'gitlab.updateIssue'
+  | 'gitlab.addIssueComment'
+  | 'gitlab.todos'
+  | 'gitlab.workItemDetails'
+  | 'gitlab.updateMRState'
+  | 'gitlab.mergeMR'
+  | 'gitlab.addMRComment'
+  | 'gitlab.workItemByPath'
 type WebKeybindingDocument = {
   version: 1
   keybindings: KeybindingOverrides
   platforms: Partial<Record<KeybindingPlatform, KeybindingOverrides>>
 }
+
+const GITLAB_WEB_RPC_METHODS = {
+  listMRs: 'gitlab.listMRs',
+  listWorkItems: 'gitlab.listWorkItems',
+  listIssues: 'gitlab.listIssues',
+  createIssue: 'gitlab.createIssue',
+  updateIssue: 'gitlab.updateIssue',
+  addIssueComment: 'gitlab.addIssueComment',
+  todos: 'gitlab.todos',
+  workItemDetails: 'gitlab.workItemDetails',
+  closeMR: 'gitlab.updateMRState',
+  reopenMR: 'gitlab.updateMRState',
+  mergeMR: 'gitlab.mergeMR',
+  addMRComment: 'gitlab.addMRComment',
+  workItemByPath: 'gitlab.workItemByPath'
+} as const satisfies Record<WebGitLabRouteKey, WebGitLabRuntimeMethod>
 
 const WEB_KEYBINDING_PLATFORMS: readonly KeybindingPlatform[] = ['darwin', 'linux', 'win32']
 const webKeybindingListeners = new Set<(snapshot: KeybindingFileSnapshot) => void>()
@@ -1085,51 +1130,50 @@ function createGitHubApi(): NonNullable<Partial<PreloadApi>['gh']> {
   } as NonNullable<Partial<PreloadApi>['gh']>
 }
 
-function createGitLabApi(): NonNullable<Partial<PreloadApi>['gl']> {
-  const direct = (method: string) => (args?: unknown) =>
-    callRuntimeResult(method, mapRepoPathArg(args))
-  const listWorkItems = async (args: unknown): Promise<Record<string, unknown>> =>
-    callRuntimeResult<Record<string, unknown>>('gitlab.listWorkItems', mapRepoPathArg(args))
-  const filterItems = async (
-    args: unknown,
-    type: 'issue' | 'mr'
-  ): Promise<Record<string, unknown>> => {
-    const result = await listWorkItems(args)
-    const items = Array.isArray(result.items)
-      ? result.items.filter(
-          (item) =>
-            item !== null && typeof item === 'object' && (item as { type?: unknown }).type === type
-        )
-      : []
-    return { ...result, items }
-  }
+function createGitLabApi(): WebGitLabApi {
+  const route = <Result>(method: WebGitLabRuntimeMethod, args?: unknown): Promise<Result> =>
+    callRuntimeResult<Result>(method, mapRepoPathArg(args))
 
-  return {
+  const gitLabApi = {
     viewer: () => Promise.resolve(null),
     projectSlug: () => Promise.resolve(null),
     mrForBranch: () => Promise.resolve(null),
     mr: () => Promise.resolve(null),
-    listMRs: (args) => filterItems(args, 'mr') as never,
-    listWorkItems: (args) => listWorkItems(args) as never,
+    listMRs: (args) => route<WebGitLabResult<'listMRs'>>(GITLAB_WEB_RPC_METHODS.listMRs, args),
+    listWorkItems: (args) =>
+      route<WebGitLabResult<'listWorkItems'>>(GITLAB_WEB_RPC_METHODS.listWorkItems, args),
     issue: () => Promise.resolve(null),
-    listIssues: (args) => filterItems(args, 'issue') as never,
-    createIssue: (args) => direct('gitlab.createIssue')(args) as never,
-    updateIssue: (args) => direct('gitlab.updateIssue')(args) as never,
-    addIssueComment: (args) => direct('gitlab.addIssueComment')(args) as never,
+    listIssues: (args) =>
+      route<WebGitLabResult<'listIssues'>>(GITLAB_WEB_RPC_METHODS.listIssues, args),
+    createIssue: (args) =>
+      route<WebGitLabResult<'createIssue'>>(GITLAB_WEB_RPC_METHODS.createIssue, args),
+    updateIssue: (args) =>
+      route<WebGitLabResult<'updateIssue'>>(GITLAB_WEB_RPC_METHODS.updateIssue, args),
+    addIssueComment: (args) =>
+      route<WebGitLabResult<'addIssueComment'>>(GITLAB_WEB_RPC_METHODS.addIssueComment, args),
     listLabels: () => Promise.resolve([]),
     listAssignableUsers: () => Promise.resolve([]),
-    todos: (args) => direct('gitlab.todos')(args) as never,
-    workItemDetails: (args) => direct('gitlab.workItemDetails')(args) as never,
-    closeMR: (args) => direct('gitlab.updateMRState')({ ...args, state: 'closed' }) as never,
-    reopenMR: (args) => direct('gitlab.updateMRState')({ ...args, state: 'opened' }) as never,
-    mergeMR: (args) => direct('gitlab.mergeMR')(args) as never,
-    addMRComment: (args) => direct('gitlab.addMRComment')(args) as never,
-    workItemByPath: (args) =>
-      direct('gitlab.workItemDetails')({
+    todos: (args) => route<WebGitLabResult<'todos'>>(GITLAB_WEB_RPC_METHODS.todos, args),
+    workItemDetails: (args) =>
+      route<WebGitLabResult<'workItemDetails'>>(GITLAB_WEB_RPC_METHODS.workItemDetails, args),
+    closeMR: (args) =>
+      route<WebGitLabResult<'closeMR'>>(GITLAB_WEB_RPC_METHODS.closeMR, {
         ...args,
-        projectRef: { host: args.host, path: args.path }
-      }) as never
-  } as NonNullable<Partial<PreloadApi>['gl']>
+        state: 'closed'
+      }),
+    reopenMR: (args) =>
+      route<WebGitLabResult<'reopenMR'>>(GITLAB_WEB_RPC_METHODS.reopenMR, {
+        ...args,
+        state: 'opened'
+      }),
+    mergeMR: (args) => route<WebGitLabResult<'mergeMR'>>(GITLAB_WEB_RPC_METHODS.mergeMR, args),
+    addMRComment: (args) =>
+      route<WebGitLabResult<'addMRComment'>>(GITLAB_WEB_RPC_METHODS.addMRComment, args),
+    workItemByPath: (args) =>
+      route<WebGitLabResult<'workItemByPath'>>(GITLAB_WEB_RPC_METHODS.workItemByPath, args)
+  } satisfies WebGitLabApi
+
+  return gitLabApi
 }
 
 function createRuntimeNamespaceApi(prefix: string): never {
