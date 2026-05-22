@@ -178,6 +178,8 @@ export function GitHistoryPanel({
     return null
   }
 
+  const expandedBodyClassName = 'h-64 max-h-[33vh] overflow-y-auto scrollbar-sleek'
+
   return (
     <div>
       <div className="pl-1 pr-3 pt-3 pb-1">
@@ -237,19 +239,28 @@ export function GitHistoryPanel({
         </div>
       </div>
       {!collapsed && state.status === 'error' && !result && (
-        <div className="px-6 py-2 text-[11px] text-destructive">{state.error}</div>
+        <div className={cn(expandedBodyClassName, 'px-6 py-2 text-[11px] text-destructive')}>
+          {state.error}
+        </div>
       )}
       {!collapsed && state.status === 'loading' && !result && (
-        <div className="flex items-center gap-2 px-6 py-2 text-[11px] text-muted-foreground">
+        <div
+          className={cn(
+            expandedBodyClassName,
+            'flex items-start gap-2 px-6 py-2 text-[11px] text-muted-foreground'
+          )}
+        >
           <RefreshCw className="size-3 animate-spin" />
           <span>Loading graph...</span>
         </div>
       )}
       {!collapsed && result && viewModels.length === 0 && (
-        <div className="px-6 py-2 text-[11px] text-muted-foreground">No commits yet</div>
+        <div className={cn(expandedBodyClassName, 'px-6 py-2 text-[11px] text-muted-foreground')}>
+          No commits yet
+        </div>
       )}
       {!collapsed && viewModels.length > 0 && (
-        <div className="max-h-[33vh] overflow-y-auto scrollbar-sleek">
+        <div className={expandedBodyClassName}>
           {viewModels.map((viewModel) => (
             <GitHistoryRow
               key={`${viewModel.kind}:${viewModel.historyItem.id}`}

@@ -205,7 +205,7 @@ const SOURCE_CONTROL_TREE_INDENT_PX = 12
 const SOURCE_CONTROL_TREE_DIRECTORY_PADDING_PX = 8
 const SOURCE_CONTROL_TREE_FILE_PADDING_PX = 20
 const EMPTY_GIT_HISTORY_STATE: GitHistoryPanelState = { status: 'idle' }
-const DEFAULT_COLLAPSED_SECTIONS = ['history'] as const
+const DEFAULT_COLLAPSED_SECTIONS = [] as const
 
 function createDefaultCollapsedSections(): Set<string> {
   return new Set(DEFAULT_COLLAPSED_SECTIONS)
@@ -4071,9 +4071,9 @@ function SourceControlInner(): React.JSX.Element {
 
           {scope === 'all' && !normalizedFilter && (
             // Why: the graph is reference context for the whole panel, so when
-            // file sections are short it should occupy the bottom instead of
-            // crowding the commit controls.
-            <div className="mt-auto">
+            // file sections are short it should occupy the bottom, and when the
+            // pane scrolls it should remain docked as branch context.
+            <div className="sticky bottom-0 z-10 mt-auto shrink-0 border-t border-border bg-sidebar/95 backdrop-blur-sm">
               <GitHistoryPanel
                 state={gitHistoryState}
                 collapsed={collapsedSections.has('history')}
