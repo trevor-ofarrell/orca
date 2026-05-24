@@ -494,6 +494,7 @@ function createFolderWorkspace(
     orcaCreatedAt: now,
     orcaCreationSource: 'desktop',
     ...(args.createdWithAgent ? { createdWithAgent: args.createdWithAgent } : {}),
+    ...(args.comment !== undefined ? { comment: args.comment } : {}),
     ...(args.linkedIssue !== undefined ? { linkedIssue: args.linkedIssue } : {}),
     ...(args.linkedPR !== undefined ? { linkedPR: args.linkedPR } : {}),
     ...(args.linkedLinearIssue !== undefined ? { linkedLinearIssue: args.linkedLinearIssue } : {}),
