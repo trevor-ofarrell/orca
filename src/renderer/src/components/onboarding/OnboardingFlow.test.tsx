@@ -30,11 +30,11 @@ describe('OnboardingFlow', () => {
       />
     )
 
-    expect(html).toContain('Interested in Orca&#x27;s advanced features?')
-    expect(html).toContain('Take a short tour before getting started.')
-    expect(html).toContain('Learn how Orca can help you')
-    expect(html).toContain('Hand off a feature to an orchestrator agent.')
-    expect(html).toContain('Grab an element from your running app and send it to an agent.')
+    expect(html).toContain('Explore Orca')
+    expect(html).toContain('See how Orca supports parallel agent work.')
+    expect(html).toContain('Preview the core workflow.')
+    expect(html).toContain('Run agents in isolated workspaces.')
+    expect(html).toContain('Review, verify, and ship changes.')
     expect(html).not.toContain('Write and preview Markdown.')
     expect(html).toContain('items-start')
     expect(html).toContain('text-left')

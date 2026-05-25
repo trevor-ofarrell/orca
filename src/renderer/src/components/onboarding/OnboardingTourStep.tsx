@@ -8,10 +8,9 @@ import { FeatureWallTourSurface } from '../feature-wall/FeatureWallTourSurface'
 import { usePrefersReducedMotion } from '../feature-wall/feature-wall-modal-helpers'
 
 const TOUR_LEARNING_POINTS: readonly string[] = [
-  'Work on several branches at once.',
-  'Hand off a feature to an orchestrator agent.',
-  'Start work straight from a GitHub or Linear ticket.',
-  'Grab an element from your running app and send it to an agent.'
+  'Run agents in isolated workspaces.',
+  'Start from GitHub or Linear.',
+  'Review, verify, and ship changes.'
 ]
 
 type OnboardingTourStepProps = {
@@ -103,7 +102,7 @@ export function OnboardingTourStep({
     <div className="flex h-full min-h-[430px] flex-col">
       <div className="grid w-full grid-cols-1 items-start gap-10 md:grid-cols-[1fr_minmax(0,340px)]">
         <div className="flex flex-col gap-4">
-          <p className="text-sm font-medium text-foreground">Learn how Orca can help you…</p>
+          <p className="text-sm font-medium text-foreground">Preview the core workflow.</p>
           <ul className="flex flex-col gap-2.5">
             {TOUR_LEARNING_POINTS.map((point) => (
               <li key={point} className="flex items-start gap-3">
@@ -131,7 +130,7 @@ export function OnboardingTourStep({
       </div>
 
       <p className="mt-auto max-w-[560px] text-left text-xs leading-relaxed text-muted-foreground">
-        This tour can be seen anytime under Help &gt; Explore Orca.
+        Available later under Help &gt; Explore Orca.
       </p>
     </div>
   )

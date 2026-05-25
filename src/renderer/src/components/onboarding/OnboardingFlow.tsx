@@ -38,8 +38,8 @@ const stepCopy = {
     subtitle: 'Connect GitHub or Linear to:'
   },
   tour: {
-    title: "Interested in Orca's advanced features?",
-    subtitle: 'Take a short tour before getting started.'
+    title: 'Explore Orca',
+    subtitle: 'See how Orca supports parallel agent work.'
   },
   repo: {
     title: 'Point Orca at some code',
