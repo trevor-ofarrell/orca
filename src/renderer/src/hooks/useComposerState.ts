@@ -1762,8 +1762,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         prompt: startupPrompt,
         cmdOverrides: settings?.agentCmdOverrides ?? {},
         platform: CLIENT_PLATFORM,
-        useOrcaClaudeAgentStatusSettings: settings?.agentStatusHooksEnabled !== false,
-        useOrcaCodexAgentStatusProfile: settings?.agentStatusHooksEnabled !== false
+        useOrcaClaudeAgentStatusSettings: settings?.agentStatusHooksEnabled !== false
       })
 
       // Why: thread agent_started telemetry through the queued startup so
@@ -1780,6 +1779,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         request_kind: 'new'
       }
       activateAndRevealWorktree(worktree.id, {
+        sidebarRevealBehavior: 'auto',
         setup: result.setup,
         issueCommand,
         ...(startupPlan
@@ -1981,8 +1981,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
                 draft: quickDraftPrompt,
                 cmdOverrides: settings?.agentCmdOverrides ?? {},
                 platform: CLIENT_PLATFORM,
-                useOrcaClaudeAgentStatusSettings: settings?.agentStatusHooksEnabled !== false,
-                useOrcaCodexAgentStatusProfile: settings?.agentStatusHooksEnabled !== false
+                useOrcaClaudeAgentStatusSettings: settings?.agentStatusHooksEnabled !== false
               })
 
         let startupPlan: ReturnType<typeof buildAgentStartupPlan> = null
@@ -2001,8 +2000,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
             cmdOverrides: settings?.agentCmdOverrides ?? {},
             platform: CLIENT_PLATFORM,
             allowEmptyPromptLaunch: true,
-            useOrcaClaudeAgentStatusSettings: settings?.agentStatusHooksEnabled !== false,
-            useOrcaCodexAgentStatusProfile: settings?.agentStatusHooksEnabled !== false
+            useOrcaClaudeAgentStatusSettings: settings?.agentStatusHooksEnabled !== false
           })
           if (startupPlan && quickDraftPrompt) {
             startupPlan.draftPrompt = quickDraftPrompt
@@ -2023,6 +2021,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
                 request_kind: 'new'
               }
         activateAndRevealWorktree(worktree.id, {
+          sidebarRevealBehavior: 'auto',
           setup: result.setup,
           ...(startupPlan
             ? {

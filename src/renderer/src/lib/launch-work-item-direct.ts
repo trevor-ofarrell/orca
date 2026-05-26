@@ -299,8 +299,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
             draft: draftContent,
             cmdOverrides: settings?.agentCmdOverrides ?? {},
             platform: CLIENT_PLATFORM,
-            useOrcaClaudeAgentStatusSettings: settings?.agentStatusHooksEnabled !== false,
-            useOrcaCodexAgentStatusProfile: settings?.agentStatusHooksEnabled !== false
+            useOrcaClaudeAgentStatusSettings: settings?.agentStatusHooksEnabled !== false
           })
     if (draftLaunchPlan) {
       startupPlan = {
@@ -318,12 +317,12 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
         cmdOverrides: settings?.agentCmdOverrides ?? {},
         platform: CLIENT_PLATFORM,
         allowEmptyPromptLaunch: true,
-        useOrcaClaudeAgentStatusSettings: settings?.agentStatusHooksEnabled !== false,
-        useOrcaCodexAgentStatusProfile: settings?.agentStatusHooksEnabled !== false
+        useOrcaClaudeAgentStatusSettings: settings?.agentStatusHooksEnabled !== false
       })
     }
 
     const activation = activateAndRevealWorktree(worktreeId, {
+      sidebarRevealBehavior: 'auto',
       setup: result.setup,
       ...buildStartupOpts(effectiveAgent, startupPlan, launchSource)
     })
