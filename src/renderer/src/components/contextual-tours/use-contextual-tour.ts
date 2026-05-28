@@ -74,6 +74,17 @@ export function useContextualTour(
   ])
 
   useEffect(() => {
+    return () => {
+      const state = useAppStore.getState()
+      // Why: surfaces like sheets can unmount without rendering an `enabled=false`
+      // pass, so suppress their active tour during cleanup too.
+      if (state.activeContextualTourId === id && state.activeContextualTourSource === source) {
+        state.suppressContextualTour(id, source)
+      }
+    }
+  }, [id, source])
+
+  useEffect(() => {
     if (
       !enabled ||
       typeof window === 'undefined' ||
