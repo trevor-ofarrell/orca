@@ -28,6 +28,11 @@ import {
 import { useAppStore } from '@/store'
 import { installCliFromFeatureTip } from './feature-tip-cli-install-action'
 import { getFeatureTipForModal } from './feature-tip-modal-state'
+import {
+  getOrcaCliFeatureTipTelemetrySource,
+  trackOrcaCliFeatureTipSetupClicked,
+  trackOrcaCliFeatureTipSetupResult
+} from './feature-tip-telemetry'
 
 const WAVEFORM_BAR_HEIGHTS = [30, 60, 90, 70, 100, 50, 80, 35, 65]
 const CLI_AGENT_COMMANDS = [
@@ -262,16 +267,20 @@ export default function FeatureTipsModal(): JSX.Element | null {
         break
       }
       case 'setup-cli': {
+        const telemetrySource = getOrcaCliFeatureTipTelemetrySource(modalData.source)
+        trackOrcaCliFeatureTipSetupClicked(telemetrySource)
         setPrimaryBusy(true)
         try {
           const result = await installCliFromFeatureTip(() => window.api.cli.install())
           if (result.kind === 'installed') {
+            trackOrcaCliFeatureTipSetupResult(telemetrySource, 'installed')
             toast.success('Registered `orca` in PATH.')
             enableOrchestrationSkillSetup()
             setSkillTerminalOpen(true)
             return
           }
 
+          trackOrcaCliFeatureTipSetupResult(telemetrySource, 'needs_attention')
           toast.warning('Orca CLI needs attention', {
             description: result.status.detail ?? 'Open Settings to finish CLI setup.'
           })
@@ -283,12 +292,14 @@ export default function FeatureTipsModal(): JSX.Element | null {
             import.meta.env.DEV &&
             message.includes('Development mode uses a generated launcher for validation only')
           ) {
+            trackOrcaCliFeatureTipSetupResult(telemetrySource, 'dev_preview')
             toast.info('Development preview: opening skills setup terminal.')
             enableOrchestrationSkillSetup()
             setSkillTerminalOpen(true)
             return
           }
 
+          trackOrcaCliFeatureTipSetupResult(telemetrySource, 'failed')
           toast.error(message)
         } finally {
           setPrimaryBusy(false)
