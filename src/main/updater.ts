@@ -104,7 +104,6 @@ function getAutoUpdater(): ElectronAutoUpdater {
 function clearAvailableUpdateContext(): void {
   availableVersion = null
   availableReleaseUrl = null
-  pendingReplacementDownloadVersion = null
 }
 
 function clearStagedUpdateContext(): void {
@@ -305,6 +304,14 @@ function getPendingDownloadVersion(): string | null {
     compareVersions(currentStatus.version, app.getVersion()) > 0
   ) {
     return currentStatus.version
+  }
+  // Why: a follow-up freshness check can clear availableVersion while an older
+  // artifact is still finishing; the queued replacement remains the target.
+  if (
+    pendingReplacementDownloadVersion &&
+    compareVersions(pendingReplacementDownloadVersion, app.getVersion()) > 0
+  ) {
+    return pendingReplacementDownloadVersion
   }
   return null
 }
@@ -706,7 +713,7 @@ function retryPrereleaseFallbackAfterMissingManifest(
 function runBackgroundUpdateCheck(
   nudgeId: string | null = getPersistedPendingUpdateNudgeId()
 ): void {
-  if (backgroundCheckLaunchPending || currentStatus.state === 'checking') {
+  if (backgroundCheckLaunchPending || currentStatus.state === 'checking' || activeDownloadVersion) {
     return
   }
   if (!app.isPackaged || is.dev) {
@@ -785,7 +792,8 @@ export function checkForUpdatesFromMenu(options?: { includePrerelease?: boolean 
     enableIncludePrerelease()
   }
 
-  const checkAlreadyInFlight = backgroundCheckLaunchPending || currentStatus.state === 'checking'
+  const checkAlreadyInFlight =
+    backgroundCheckLaunchPending || currentStatus.state === 'checking' || activeDownloadVersion
   userInitiatedCheck = true
   // Why: a manual check is independent of any active nudge campaign. Reset the
   // nudge marker so the resulting status is not decorated with activeNudgeId,
@@ -859,7 +867,11 @@ async function checkForUpdateNudge(): Promise<void> {
       return
     }
 
-    if (currentStatus.state === 'checking' || currentStatus.state === 'downloading') {
+    if (
+      currentStatus.state === 'checking' ||
+      currentStatus.state === 'downloading' ||
+      activeDownloadVersion
+    ) {
       return
     }
 
@@ -1034,7 +1046,8 @@ export function setupAutoUpdater(
     if (
       backgroundCheckLaunchPending ||
       currentStatus.state === 'checking' ||
-      currentStatus.state === 'downloading'
+      currentStatus.state === 'downloading' ||
+      activeDownloadVersion
     ) {
       return
     }
@@ -1070,7 +1083,11 @@ function startAvailableUpdateDownload(): void {
     return
   }
   if (activeDownloadVersion) {
-    if (compareVersions(targetVersion, activeDownloadVersion) > 0) {
+    if (
+      compareVersions(targetVersion, activeDownloadVersion) > 0 &&
+      (!pendingReplacementDownloadVersion ||
+        compareVersions(targetVersion, pendingReplacementDownloadVersion) >= 0)
+    ) {
       pendingReplacementDownloadVersion = targetVersion
     }
     return
@@ -1094,6 +1111,10 @@ function startAvailableUpdateDownload(): void {
   beginMacUpdateDownload()
   getAutoUpdater()
     .downloadUpdate()
+    .then(() => {
+      clearActiveUpdateDownload(targetVersion)
+      startPendingReplacementDownload()
+    })
     .catch((err) => {
       const message = String(err?.message ?? err)
       const existingMatchingErrorUserInitiated =

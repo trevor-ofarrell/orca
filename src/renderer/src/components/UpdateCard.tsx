@@ -217,6 +217,8 @@ export function UpdateCard() {
   const cachedVersion = versionRef.current
   const hasExplicitDownloadIntent =
     cachedVersion !== null && downloadIntentVersion === cachedVersion
+  const isLocallyDismissedVersion =
+    cachedVersion !== null && locallyDismissedVersionRef.current === cachedVersion
   const shouldShowDetailedErrorCard =
     status.state === 'error' &&
     (isUserInitiated || isNudgeDriven || hasStartedDownload.current || hasExplicitDownloadIntent)
@@ -271,6 +273,17 @@ export function UpdateCard() {
   ) {
     return null
   }
+  // Why: closing the available card is also a request to keep the automatic
+  // pre-download quiet; explicit downloads and nudge campaigns still surface.
+  if (
+    status.state === 'downloading' &&
+    isLocallyDismissedVersion &&
+    !hasStartedDownload.current &&
+    !hasExplicitDownloadIntent &&
+    !isNudgeDriven
+  ) {
+    return null
+  }
   // Error: show card for user-initiated check failures or for failures tied to
   // a concrete cached update version (card-initiated and Settings-initiated
   // download/install flows). Background check failures stay silent.
@@ -291,8 +304,6 @@ export function UpdateCard() {
   // Why: bypass the gate when the current cycle was user-initiated — the user
   // explicitly asked to check, so they expect to see the result even if they
   // dismissed the same version earlier.
-  const isLocallyDismissedVersion =
-    versionRef.current !== null && locallyDismissedVersionRef.current === versionRef.current
   if (
     versionRef.current &&
     (dismissedVersion === versionRef.current || isLocallyDismissedVersion) &&

@@ -355,6 +355,8 @@ function computeVisibility(input: VisibilityInput): VisibilityResult {
   const isNudgeDriven = 'activeNudgeId' in status && Boolean(status.activeNudgeId)
   const hasExplicitDownloadIntent =
     cachedVersion !== null && downloadIntentVersion === cachedVersion
+  const isLocallyDismissedVersion =
+    cachedVersion !== null && locallyDismissedVersion === cachedVersion
   const shouldShowDetailedErrorCard =
     status.state === 'error' &&
     (isUserInitiated || isNudgeDriven || hasStartedDownload || hasExplicitDownloadIntent)
@@ -381,17 +383,26 @@ function computeVisibility(input: VisibilityInput): VisibilityResult {
   ) {
     return 'hidden'
   }
+  if (
+    status.state === 'downloading' &&
+    isLocallyDismissedVersion &&
+    !hasStartedDownload &&
+    !hasExplicitDownloadIntent &&
+    !isNudgeDriven
+  ) {
+    return 'hidden'
+  }
   if (status.state === 'error' && !shouldShowDetailedErrorCard && !isUserInitiated) {
     return 'hidden'
   }
 
   const effectiveVersion = 'version' in status ? status.version : cachedVersion
-  const isLocallyDismissedVersion =
+  const isEffectiveLocallyDismissedVersion =
     effectiveVersion !== null && locallyDismissedVersion === effectiveVersion
   if (
     effectiveVersion &&
-    (dismissedVersion === effectiveVersion || isLocallyDismissedVersion) &&
-    (isLocallyDismissedVersion ||
+    (dismissedVersion === effectiveVersion || isEffectiveLocallyDismissedVersion) &&
+    (isEffectiveLocallyDismissedVersion ||
       (!userInitiatedCycle && !isUserInitiated && !hasExplicitDownloadIntent && !isNudgeDriven))
   ) {
     if (
@@ -592,6 +603,18 @@ describe('UpdateCard visibility gates', () => {
     ).toBe('visible')
   })
 
+  it('hides user-initiated download progress after the visible available card is dismissed', () => {
+    expect(
+      computeVisibility({
+        status: { state: 'downloading', percent: 42, version: '1.2.0', userInitiated: true },
+        dismissedVersion: '1.2.0',
+        cachedVersion: '1.2.0',
+        hasStartedDownload: false,
+        locallyDismissedVersion: '1.2.0'
+      })
+    ).toBe('hidden')
+  })
+
   it('shows settings-initiated download progress even when the version was dismissed', () => {
     expect(
       computeVisibility({
@@ -599,7 +622,8 @@ describe('UpdateCard visibility gates', () => {
         dismissedVersion: '1.2.0',
         cachedVersion: '1.2.0',
         hasStartedDownload: false,
-        downloadIntentVersion: '1.2.0'
+        downloadIntentVersion: '1.2.0',
+        locallyDismissedVersion: '1.2.0'
       })
     ).toBe('visible')
   })
