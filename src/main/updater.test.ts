@@ -860,6 +860,88 @@ describe('updater', () => {
     })
   })
 
+  it('preserves user initiation when a manual check races active background download events', async () => {
+    vi.stubGlobal('process', { ...process, platform: 'linux' })
+    autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
+    autoUpdaterMock.downloadUpdate.mockImplementation(() => new Promise(() => {}))
+
+    const sendMock = vi.fn()
+    const mainWindow = { webContents: { send: sendMock } }
+
+    const { setupAutoUpdater } = await import('./updater')
+
+    setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
+    autoUpdaterMock.emit('checking-for-update')
+    autoUpdaterMock.emit('update-available', { version: '1.0.61' })
+
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.downloadUpdate).toHaveBeenCalledTimes(1)
+    })
+
+    autoUpdaterMock.emit('download-progress', { percent: 10 })
+    sendMock.mockClear()
+
+    const { checkForUpdatesFromMenu } = await import('./updater')
+    checkForUpdatesFromMenu()
+
+    autoUpdaterMock.emit('download-progress', { percent: 42 })
+    autoUpdaterMock.emit('update-downloaded', { version: '1.0.61' })
+
+    expect(sendMock).toHaveBeenCalledWith('updater:status', {
+      state: 'checking',
+      userInitiated: true
+    })
+    expect(sendMock).toHaveBeenCalledWith('updater:status', {
+      state: 'downloading',
+      percent: 42,
+      version: '1.0.61',
+      userInitiated: true
+    })
+    expect(sendMock).toHaveBeenCalledWith('updater:status', {
+      state: 'downloaded',
+      version: '1.0.61',
+      releaseUrl: undefined,
+      userInitiated: true
+    })
+  })
+
+  it('preserves user initiation when a manual check races an active background download failure', async () => {
+    let rejectDownload: (reason: Error) => void = () => {}
+    autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
+    autoUpdaterMock.downloadUpdate.mockImplementation(
+      () =>
+        new Promise<string[]>((_resolve, reject) => {
+          rejectDownload = reject
+        })
+    )
+
+    const sendMock = vi.fn()
+    const mainWindow = { webContents: { send: sendMock } }
+
+    const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+
+    setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
+    autoUpdaterMock.emit('checking-for-update')
+    autoUpdaterMock.emit('update-available', { version: '1.0.61' })
+
+    await vi.waitFor(() => {
+      expect(autoUpdaterMock.downloadUpdate).toHaveBeenCalledTimes(1)
+    })
+
+    autoUpdaterMock.emit('download-progress', { percent: 10 })
+    sendMock.mockClear()
+    checkForUpdatesFromMenu()
+    rejectDownload(new Error('disk full'))
+
+    await vi.waitFor(() => {
+      expect(sendMock).toHaveBeenCalledWith('updater:status', {
+        state: 'error',
+        message: 'disk full',
+        userInitiated: true
+      })
+    })
+  })
+
   it('preserves user initiation when a manual auto-download emits an error before rejecting', async () => {
     autoUpdaterMock.checkForUpdates.mockImplementation(() => {
       autoUpdaterMock.emit('checking-for-update')

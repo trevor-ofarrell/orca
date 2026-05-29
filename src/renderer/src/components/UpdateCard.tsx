@@ -265,17 +265,6 @@ export function UpdateCard() {
   ) {
     return null
   }
-  if (
-    status.state === 'downloaded' &&
-    !userInitiatedCycleRef.current &&
-    !hasStartedDownload.current &&
-    !hasExplicitDownloadIntent &&
-    !isNudgeDriven &&
-    !isUserInitiated
-  ) {
-    return null
-  }
-
   // Error: show card for user-initiated check failures or for failures tied to
   // a concrete cached update version (card-initiated and Settings-initiated
   // download/install flows). Background check failures stay silent.
@@ -291,8 +280,8 @@ export function UpdateCard() {
   }
 
   // Dismiss gate: if the user previously dismissed this version, hide the card
-  // for passive reminder states. Keep active in-progress/error states visible so
-  // explicit install actions can still surface progress and failures.
+  // for passive reminder states. Keep in-progress/error and ready-to-install
+  // states visible so users can always finish or recover an update.
   // Why: bypass the gate when the current cycle was user-initiated — the user
   // explicitly asked to check, so they expect to see the result even if they
   // dismissed the same version earlier.
@@ -304,7 +293,11 @@ export function UpdateCard() {
     !hasExplicitDownloadIntent &&
     !isNudgeDriven
   ) {
-    if (status.state !== 'downloading' && status.state !== 'error') {
+    if (
+      status.state !== 'downloading' &&
+      status.state !== 'downloaded' &&
+      status.state !== 'error'
+    ) {
       return null
     }
   }

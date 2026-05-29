@@ -210,6 +210,7 @@ describe('updater mac install handoff', () => {
 
   it('does not let stale native macOS readiness mark a replacement update ready', async () => {
     vi.stubGlobal('process', { ...process, platform: 'darwin' })
+    autoUpdaterMock.downloadUpdate.mockImplementation(() => new Promise(() => {}))
 
     const sendMock = vi.fn()
     const mainWindow = { webContents: { send: sendMock } }
@@ -228,9 +229,13 @@ describe('updater mac install handoff', () => {
     autoUpdaterMock.emit('update-downloaded', { version: '1.0.61' })
     sendMock.mockClear()
 
+    expect(autoUpdaterMock.downloadUpdate).toHaveBeenCalledTimes(1)
+
     autoUpdaterMock.emit('checking-for-update')
     autoUpdaterMock.emit('update-available', { version: '1.0.62' })
     await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(autoUpdaterMock.downloadUpdate).toHaveBeenCalledTimes(1)
 
     nativeDownloadedHandler?.()
 
@@ -238,6 +243,7 @@ describe('updater mac install handoff', () => {
       'updater:status',
       expect.objectContaining({ state: 'downloaded' })
     )
+    expect(autoUpdaterMock.downloadUpdate).toHaveBeenCalledTimes(2)
 
     autoUpdaterMock.emit('update-downloaded', { version: '1.0.62' })
 

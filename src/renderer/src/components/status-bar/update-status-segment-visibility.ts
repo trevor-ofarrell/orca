@@ -11,8 +11,13 @@ export function shouldShowUpdateStatusSegment(
     downloadIntentVersion !== null &&
     status.version === downloadIntentVersion
 
-  if (status.state === 'downloading' || status.state === 'downloaded') {
+  if (status.state === 'downloading') {
     return isUserInitiated || isNudgeDriven || matchesExplicitDownload
+  }
+  if (status.state === 'downloaded') {
+    // Why: passive background downloads are quiet while in progress, but once
+    // ready they need a persistent way back to the install UI.
+    return true
   }
   if (status.state === 'error') {
     return isUserInitiated || isNudgeDriven || downloadIntentVersion !== null

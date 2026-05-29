@@ -55,6 +55,7 @@ type UpdaterHandlerContext = {
 
 function getActionableUpdateUserInitiated(status: UpdateStatus): boolean | undefined {
   if (
+    status.state === 'checking' ||
     status.state === 'available' ||
     status.state === 'downloading' ||
     status.state === 'downloaded'
@@ -96,16 +97,23 @@ export function registerAutoUpdaterHandlers({
   setAvailableVersion,
   setUserInitiatedCheck
 }: UpdaterHandlerContext): void {
+  let macNativeReadinessPendingVersion: string | null = null
+
   // On macOS, electron-updater's MacUpdater downloads the ZIP from GitHub,
   // then serves it to Squirrel.Mac via a localhost proxy. The electron-updater
   // 'update-downloaded' event fires BEFORE Squirrel finishes its download.
   // Track Squirrel readiness so we don't show "ready to install" prematurely.
   if (process.platform === 'darwin') {
     nativeUpdater.on('update-downloaded', () => {
-      if (!hasNewerDownloadedVersion()) {
+      const readyVersion = macNativeReadinessPendingVersion
+      macNativeReadinessPendingVersion = null
+
+      if (!readyVersion && !hasNewerDownloadedVersion()) {
         return
       }
-      handleMacInstallerReady(true, performQuitAndInstall, () => {
+      const shouldUseNativeReadiness =
+        !readyVersion || (getStagedUpdateVersion() === readyVersion && hasNewerDownloadedVersion())
+      handleMacInstallerReady(shouldUseNativeReadiness, performQuitAndInstall, () => {
         // If we were holding the 'downloaded' status, send it now — but only
         // when the staged version is actually newer than what's running.
         sendStatus({
@@ -115,6 +123,7 @@ export function registerAutoUpdaterHandlers({
           ...(getActionableUpdateUserInitiated(getCurrentStatus()) ? { userInitiated: true } : {})
         })
       })
+      startAvailableUpdateDownload()
     })
   }
 
@@ -238,6 +247,11 @@ export function registerAutoUpdaterHandlers({
         ...(wasUserInitiated ? { userInitiated: true } : {}),
         changelog
       })
+      if (process.platform === 'darwin' && macNativeReadinessPendingVersion) {
+        // Why: Squirrel.Mac's native ready event has no version payload. Wait
+        // for the prior handoff before starting a replacement download.
+        return
+      }
       startAvailableUpdateDownload()
     })()
   })
@@ -308,6 +322,7 @@ export function registerAutoUpdaterHandlers({
     // processing the update via the localhost proxy. On other platforms,
     // the update is ready immediately after electron-updater downloads it.
     if (process.platform === 'darwin' && !isMacInstallerReady()) {
+      macNativeReadinessPendingVersion = info.version
       // Squirrel is still processing. Keep the UI at 100% downloaded so the
       // user sees the handoff instead of a misleading "ready to install".
       sendStatus({

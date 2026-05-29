@@ -306,6 +306,7 @@ function shouldAcceptDownloadedUpdate(version: string): boolean {
 
 function getCurrentActionableUpdateUserInitiated(): boolean | undefined {
   if (
+    currentStatus.state === 'checking' ||
     currentStatus.state === 'available' ||
     currentStatus.state === 'downloading' ||
     currentStatus.state === 'downloaded'
@@ -1050,15 +1051,29 @@ function startAvailableUpdateDownload(): void {
     return
   }
   activeDownloadVersion = targetVersion
-  // Why: electron-updater can emit 'error' before downloadUpdate() rejects; the
-  // catch must not recompute intent from the error status written by the event.
+  // Why: electron-updater can emit 'error' before downloadUpdate() rejects;
+  // capture launch intent, then merge any manual promotion observed by catch.
   const downloadUserInitiated = getCurrentActionableUpdateUserInitiated()
   beginMacUpdateDownload()
   getAutoUpdater()
     .downloadUpdate()
     .catch((err) => {
+      const message = String(err?.message ?? err)
+      const existingMatchingErrorUserInitiated =
+        currentStatus.state === 'error' && currentStatus.message === message
+          ? currentStatus.userInitiated
+          : undefined
+      // Why: a manual check can promote an active background download while
+      // the download promise is still pending; preserve that promotion.
+      const wasUserInitiated =
+        downloadUserInitiated ||
+        getCurrentActionableUpdateUserInitiated() ||
+        existingMatchingErrorUserInitiated ||
+        userInitiatedCheck ||
+        backgroundCheckPromotedToUserInitiated ||
+        undefined
       clearActiveUpdateDownload(targetVersion)
-      sendErrorStatus(String(err?.message ?? err), downloadUserInitiated)
+      sendErrorStatus(message, wasUserInitiated)
     })
 }
 

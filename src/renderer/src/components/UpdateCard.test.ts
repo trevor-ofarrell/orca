@@ -370,16 +370,6 @@ function computeVisibility(input: VisibilityInput): VisibilityResult {
   ) {
     return 'hidden'
   }
-  if (
-    status.state === 'downloaded' &&
-    !userInitiatedCycle &&
-    !hasStartedDownload &&
-    !hasExplicitDownloadIntent &&
-    !isNudgeDriven &&
-    !isUserInitiated
-  ) {
-    return 'hidden'
-  }
   if (status.state === 'error' && !shouldShowDetailedErrorCard && !isUserInitiated) {
     return 'hidden'
   }
@@ -393,7 +383,11 @@ function computeVisibility(input: VisibilityInput): VisibilityResult {
     !hasExplicitDownloadIntent &&
     !isNudgeDriven
   ) {
-    if (status.state !== 'downloading' && status.state !== 'error') {
+    if (
+      status.state !== 'downloading' &&
+      status.state !== 'downloaded' &&
+      status.state !== 'error'
+    ) {
       return 'hidden'
     }
   }
@@ -603,7 +597,7 @@ describe('UpdateCard visibility gates', () => {
     ).toBe('visible')
   })
 
-  it('hides downloaded when version is dismissed and no explicit download is active', () => {
+  it('shows downloaded when version is dismissed and no explicit download is active', () => {
     expect(
       computeVisibility({
         status: { state: 'downloaded', version: '1.2.0' },
@@ -611,7 +605,7 @@ describe('UpdateCard visibility gates', () => {
         cachedVersion: '1.2.0',
         hasStartedDownload: false
       })
-    ).toBe('hidden')
+    ).toBe('visible')
   })
 
   it('shows settings-initiated downloaded state even when the version was dismissed', () => {
@@ -626,7 +620,7 @@ describe('UpdateCard visibility gates', () => {
     ).toBe('visible')
   })
 
-  it('hides ordinary background downloaded updates until the user checks', () => {
+  it('shows ordinary background downloaded updates once the update is ready to install', () => {
     expect(
       computeVisibility({
         status: { state: 'downloaded', version: '1.2.0' },
@@ -634,7 +628,7 @@ describe('UpdateCard visibility gates', () => {
         cachedVersion: '1.2.0',
         hasStartedDownload: false
       })
-    ).toBe('hidden')
+    ).toBe('visible')
   })
 
   it('shows downloaded updates after a user-initiated check', () => {
@@ -753,12 +747,15 @@ describe('UpdateCard visibility gates', () => {
 // ── Status-bar update segment gates ─────────────────────────────────
 
 describe('UpdateStatusSegment visibility gates', () => {
-  it('hides suppressed passive background download states', () => {
+  it('hides passive background download progress', () => {
     expect(
       shouldShowUpdateStatusSegment({ state: 'downloading', percent: 50, version: '1.2.0' }, null)
     ).toBe(false)
+  })
+
+  it('shows passive downloaded updates so the install UI is discoverable', () => {
     expect(shouldShowUpdateStatusSegment({ state: 'downloaded', version: '1.2.0' }, null)).toBe(
-      false
+      true
     )
   })
 
