@@ -18,9 +18,9 @@ export type WorktreeCompletionAction = {
 
 export function getWorktreeCompletionAction(
   worktrees: readonly Pick<Worktree, 'workspaceStatus'>[],
-  workspaceStatuses: readonly WorkspaceStatusDefinition[]
+  workspaceStatuses: readonly WorkspaceStatusDefinition[] | undefined
 ): WorktreeCompletionAction | null {
-  if (worktrees.length === 0) {
+  if (worktrees.length === 0 || !Array.isArray(workspaceStatuses)) {
     return null
   }
 

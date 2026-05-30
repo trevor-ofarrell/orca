@@ -72,4 +72,8 @@ describe('getWorktreeCompletionAction', () => {
       )
     ).toBeNull()
   })
+
+  it('hides while workspace statuses are unavailable', () => {
+    expect(getWorktreeCompletionAction([makeWorktree('todo')], undefined)).toBeNull()
+  })
 })
