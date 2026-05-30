@@ -151,6 +151,7 @@ vi.mock('./pty', () => ({
   deletePtyOwnership: vi.fn(),
   setPtyOwnership: vi.fn(),
   getSshPtyProvider: vi.fn(),
+  isRendererPtyOutputPaused: vi.fn().mockReturnValue(false),
   getPtyIdsForConnection: vi.fn().mockReturnValue([])
 }))
 
