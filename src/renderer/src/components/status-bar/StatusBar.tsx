@@ -160,14 +160,12 @@ function ClaudeSwitcherMenu({
   // Why: inactive-account usage is needed only for the explicit switcher
   // expansion, so fetch it on that event instead of one render later.
   const handleAccountsExpandedToggle = useCallback((): void => {
-    setAccountsExpanded((current) => {
-      const nextExpanded = !current
-      if (nextExpanded) {
-        void fetchInactiveClaudeAccountUsage()
-      }
-      return nextExpanded
-    })
-  }, [fetchInactiveClaudeAccountUsage])
+    const nextExpanded = !accountsExpanded
+    setAccountsExpanded(nextExpanded)
+    if (nextExpanded) {
+      void fetchInactiveClaudeAccountUsage()
+    }
+  }, [accountsExpanded, fetchInactiveClaudeAccountUsage])
 
   const handleSelectAccount = async (accountId: string | null): Promise<void> => {
     if (isSwitching) {
