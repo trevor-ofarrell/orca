@@ -54,7 +54,7 @@ function SetupStepRow(props: {
         className={cn(
           'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border',
           done
-            ? 'border-primary/35 bg-primary/10 text-foreground'
+            ? 'border-green-500/45 bg-green-500/10 text-green-600 dark:text-green-300'
             : 'border-border text-muted-foreground'
         )}
       >
@@ -243,7 +243,7 @@ export function FeatureWallSetupChecklist(
                 className={cn(
                   'shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium',
                   activeDone
-                    ? 'border-primary/35 bg-primary/10 text-foreground'
+                    ? 'border-green-500/45 bg-green-500/10 text-green-600 dark:text-green-300'
                     : 'border-border bg-muted/30 text-muted-foreground'
                 )}
               >
