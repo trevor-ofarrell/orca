@@ -345,18 +345,16 @@ export function AutoRenameBranchFromWorkSetting({
                       side="bottom"
                       className="w-[520px] max-w-[calc(100vw-2rem)] p-3"
                     >
-                      <div className="space-y-2">
-                        <p className="text-xs text-muted-foreground">
-                          Your Branch name prompt is appended as{' '}
-                          <code className="font-mono">Additional user prompt</code>.
-                        </p>
+                      <div>
                         <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
                           {BUILT_IN_BRANCH_NAME_PROMPT}
                         </pre>
                       </div>
                     </PopoverContent>
                   </Popover>
-                  . Orca still forces the result to be a short lowercase kebab-case name.
+                  . Orca generates only the final segment, like{' '}
+                  <code className="font-mono">fix-login-flow</code>; your branch prefix setting
+                  still applies.
                 </p>
               </div>
               <textarea
