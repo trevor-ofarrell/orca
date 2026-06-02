@@ -10,6 +10,7 @@ import type {
 import { fetchClaudeRateLimits, fetchManagedAccountUsage } from './claude-fetcher'
 import type { InactiveClaudeAccountInfo } from './claude-fetcher'
 import { fetchCodexRateLimits } from './codex-fetcher'
+import { isCodexAuthError } from '../../shared/codex-auth-errors'
 import type { ClaudeRuntimeAuthPreparation } from '../claude-accounts/runtime-auth-service'
 import {
   normalizeClaudeAccountSelectionTarget,
@@ -29,7 +30,17 @@ export type InactiveCodexAccountInfo = {
   managedHomePath: string
 }
 
+export type LegacyCodexRateLimitAuthCandidate = {
+  accountId: string
+  codexHomePath: string
+  authJson: string
+}
+
 type CodexHomePathResolver = (target?: CodexAccountSelectionTarget) => string | null
+type CodexLegacyAuthCandidateResolver = (
+  target?: CodexAccountSelectionTarget
+) => LegacyCodexRateLimitAuthCandidate | null
+type CodexLegacyAuthCandidateAdopter = (candidate: LegacyCodexRateLimitAuthCandidate) => boolean
 type ClaudeAuthPreparationResolver = (
   target?: ClaudeAccountSelectionTarget
 ) => Promise<ClaudeRuntimeAuthPreparation>
@@ -82,6 +93,8 @@ export class RateLimitService {
   private opencodeFetchGeneration = 0
   private lastOpencodeConfigHash = ''
   private codexHomePathResolver: CodexHomePathResolver | null = null
+  private codexLegacyAuthCandidateResolver: CodexLegacyAuthCandidateResolver | null = null
+  private codexLegacyAuthCandidateAdopter: CodexLegacyAuthCandidateAdopter | null = null
   private codexFetchTarget: NormalizedCodexAccountSelectionTarget = {
     runtime: 'host',
     wslDistro: null
@@ -121,6 +134,14 @@ export class RateLimitService {
 
   setCodexHomePathResolver(resolver: CodexHomePathResolver): void {
     this.codexHomePathResolver = resolver
+  }
+
+  setCodexLegacyAuthRepair(
+    resolver: CodexLegacyAuthCandidateResolver,
+    adopter: CodexLegacyAuthCandidateAdopter
+  ): void {
+    this.codexLegacyAuthCandidateResolver = resolver
+    this.codexLegacyAuthCandidateAdopter = adopter
   }
 
   setCodexFetchTarget(target?: CodexAccountSelectionTarget): void {
@@ -740,6 +761,40 @@ export class RateLimitService {
     return process.platform !== 'win32'
   }
 
+  private async fetchCodexWithLegacyAuthRepair(
+    codexHomePath: string | null,
+    target: CodexAccountSelectionTarget
+  ): Promise<ProviderRateLimits> {
+    const primary = await fetchCodexRateLimits({
+      codexHomePath,
+      allowPtyFallback: this.shouldAllowCodexPtyFallback()
+    })
+    if (primary.status !== 'error' || !isCodexAuthError(primary.error)) {
+      return primary
+    }
+
+    const candidate = this.codexLegacyAuthCandidateResolver?.(target) ?? null
+    if (!candidate || candidate.codexHomePath === codexHomePath) {
+      return primary
+    }
+
+    // Why: legacy launch-home auth is adopted only after Codex proves it can
+    // read quota with that candidate. Identity checks alone cannot prove a
+    // refresh token is still usable after OAuth rotation.
+    const retry = await fetchCodexRateLimits({
+      codexHomePath: candidate.codexHomePath,
+      allowPtyFallback: this.shouldAllowCodexPtyFallback()
+    })
+    if (retry.status !== 'ok') {
+      return primary
+    }
+
+    if (this.codexLegacyAuthCandidateAdopter?.(candidate)) {
+      return retry
+    }
+    return primary
+  }
+
   private withFetchingStatus(
     current: ProviderRateLimits | null,
     provider: 'claude' | 'codex' | 'gemini' | 'opencode-go'
@@ -800,11 +855,7 @@ export class RateLimitService {
       : this.getMissingWslCodexHomeResult(codexTarget)
     const [claudeResult, codexResult, geminiResult, opencodeGoResult] = await Promise.allSettled([
       fetchClaudeRateLimits({ authPreparation: claudeAuthPreparation }),
-      missingWslCodexHome ??
-        fetchCodexRateLimits({
-          codexHomePath,
-          allowPtyFallback: this.shouldAllowCodexPtyFallback()
-        }),
+      missingWslCodexHome ?? this.fetchCodexWithLegacyAuthRepair(codexHomePath, codexTarget),
       fetchGeminiRateLimits(geminiCliOAuthEnabled),
       fetchOpenCodeGoRateLimits(cookie, workspaceIdOverride || undefined)
     ])
@@ -917,10 +968,7 @@ export class RateLimitService {
     const codex = await (
       missingWslCodexHome
         ? Promise.resolve(missingWslCodexHome)
-        : fetchCodexRateLimits({
-            codexHomePath,
-            allowPtyFallback: this.shouldAllowCodexPtyFallback()
-          })
+        : this.fetchCodexWithLegacyAuthRepair(codexHomePath, codexTarget)
     ).catch(
       (err): ProviderRateLimits => ({
         provider: 'codex',

@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- test suite covers snapshot, migration, auth materialization, and error-resilience scenarios */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -229,6 +230,27 @@ function createCodexAuthJson(
       refresh_token: refreshToken
     }
   })}\n`
+}
+
+function getLegacyHostLaunchHomePath(accountId: string): string {
+  const segment = `account-${createHash('sha256').update(accountId).digest('hex').slice(0, 32)}`
+  return join(testState.userDataDir, 'codex-runtime-home', 'launch', 'host', segment, 'home')
+}
+
+function createLegacyHostLaunchAuth(
+  accountId: string,
+  auth: string,
+  markerAccountId = accountId
+): string {
+  const homePath = getLegacyHostLaunchHomePath(accountId)
+  mkdirSync(homePath, { recursive: true })
+  writeFileSync(
+    join(homePath, '.orca-managed-launch-home'),
+    `${JSON.stringify({ version: 1, accountId: markerAccountId }, null, 2)}\n`,
+    'utf-8'
+  )
+  writeFileSync(join(homePath, 'auth.json'), auth, 'utf-8')
+  return homePath
 }
 
 describe('CodexRuntimeHomeService', () => {
@@ -2314,6 +2336,109 @@ describe('CodexRuntimeHomeService', () => {
 
     expect(readFileSync(managedAuthPath, 'utf-8')).toBe(refreshedAuth)
     expect(readFileSync(runtimeAuthPath, 'utf-8')).toBe(refreshedAuth)
+  })
+
+  it('returns and adopts matching legacy launch-home auth for the selected host account', async () => {
+    const runtimeAuthPath = getRuntimeCodexAuthPath()
+    const originalAuth = createCodexAuthJson('user@example.com', 'acct-1', 'original', 1_000)
+    const legacyAuth = createCodexAuthJson('user@example.com', 'acct-1', 'legacy-refresh', 2_000)
+    const postRetryAuth = createCodexAuthJson('user@example.com', 'acct-1', 'post-retry', 3_000)
+    const managedHomePath = createManagedAuth(testState.userDataDir, 'account-1', originalAuth)
+    const managedAuthPath = join(managedHomePath, 'auth.json')
+    const legacyHomePath = createLegacyHostLaunchAuth('account-1', legacyAuth)
+    const store = createStore(
+      createSettings({
+        codexManagedAccounts: [
+          {
+            id: 'account-1',
+            email: 'user@example.com',
+            managedHomePath,
+            providerAccountId: 'acct-1',
+            workspaceLabel: null,
+            workspaceAccountId: 'acct-1',
+            createdAt: 1,
+            updatedAt: 1,
+            lastAuthenticatedAt: 1
+          }
+        ],
+        activeCodexManagedAccountId: 'account-1'
+      })
+    )
+
+    const { CodexRuntimeHomeService } = await import('./runtime-home-service')
+    const service = new CodexRuntimeHomeService(store as never)
+
+    const candidate = service.getLegacyRateLimitAuthCandidate({ runtime: 'host' })
+
+    expect(candidate).toMatchObject({
+      accountId: 'account-1',
+      codexHomePath: legacyHomePath,
+      authJson: legacyAuth
+    })
+    writeFileSync(join(legacyHomePath, 'auth.json'), postRetryAuth, 'utf-8')
+    expect(service.adoptLegacyRateLimitAuthCandidate(candidate!)).toBe(true)
+    expect(readFileSync(managedAuthPath, 'utf-8')).toBe(postRetryAuth)
+    expect(readFileSync(runtimeAuthPath, 'utf-8')).toBe(postRetryAuth)
+  })
+
+  it('ignores legacy launch-home auth for a different Codex identity', async () => {
+    const originalAuth = createCodexAuthJson('user@example.com', 'acct-1', 'original', 1_000)
+    const otherAuth = createCodexAuthJson('other@example.com', 'acct-2', 'other', 2_000)
+    const managedHomePath = createManagedAuth(testState.userDataDir, 'account-1', originalAuth)
+    createLegacyHostLaunchAuth('account-1', otherAuth)
+    const store = createStore(
+      createSettings({
+        codexManagedAccounts: [
+          {
+            id: 'account-1',
+            email: 'user@example.com',
+            managedHomePath,
+            providerAccountId: 'acct-1',
+            workspaceLabel: null,
+            workspaceAccountId: 'acct-1',
+            createdAt: 1,
+            updatedAt: 1,
+            lastAuthenticatedAt: 1
+          }
+        ],
+        activeCodexManagedAccountId: 'account-1'
+      })
+    )
+
+    const { CodexRuntimeHomeService } = await import('./runtime-home-service')
+    const service = new CodexRuntimeHomeService(store as never)
+
+    expect(service.getLegacyRateLimitAuthCandidate({ runtime: 'host' })).toBeNull()
+  })
+
+  it('ignores legacy launch-home auth when the Orca marker does not match', async () => {
+    const originalAuth = createCodexAuthJson('user@example.com', 'acct-1', 'original', 1_000)
+    const legacyAuth = createCodexAuthJson('user@example.com', 'acct-1', 'legacy-refresh', 2_000)
+    const managedHomePath = createManagedAuth(testState.userDataDir, 'account-1', originalAuth)
+    createLegacyHostLaunchAuth('account-1', legacyAuth, 'account-2')
+    const store = createStore(
+      createSettings({
+        codexManagedAccounts: [
+          {
+            id: 'account-1',
+            email: 'user@example.com',
+            managedHomePath,
+            providerAccountId: 'acct-1',
+            workspaceLabel: null,
+            workspaceAccountId: 'acct-1',
+            createdAt: 1,
+            updatedAt: 1,
+            lastAuthenticatedAt: 1
+          }
+        ],
+        activeCodexManagedAccountId: 'account-1'
+      })
+    )
+
+    const { CodexRuntimeHomeService } = await import('./runtime-home-service')
+    const service = new CodexRuntimeHomeService(store as never)
+
+    expect(service.getLegacyRateLimitAuthCandidate({ runtime: 'host' })).toBeNull()
   })
 
   it('rejects older same-account Codex auth on first sync after restart', async () => {

@@ -20,6 +20,7 @@ import {
   unlinkSync
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   dirname,
   extname,
@@ -44,11 +45,21 @@ import { syncSystemConfigIntoManagedCodexHome } from '../codex/codex-config-mirr
 import { parseWslUncPath } from '../../shared/wsl-paths'
 import {
   getSelectedCodexAccountIdForTarget,
+  normalizeCodexAccountSelectionTarget,
   normalizeCodexRuntimeSelection,
   setSelectedCodexAccountIdForTarget,
   type CodexAccountSelectionTarget
 } from './runtime-selection'
 import { getDefaultWslDistro, getWslHome } from '../wsl'
+
+const LEGACY_LAUNCH_HOME_MARKER = '.orca-managed-launch-home'
+const LEGACY_LAUNCH_HOME_MARKER_VERSION = 1
+
+export type LegacyCodexRateLimitAuthCandidate = {
+  accountId: string
+  codexHomePath: string
+  authJson: string
+}
 
 type CodexAuthIdentity = {
   email: string | null
@@ -308,6 +319,79 @@ export class CodexRuntimeHomeService {
       this.lastWrittenAuthJson = null
     }
     this.skipNextReadBackForAccountId = accountId
+  }
+
+  getLegacyRateLimitAuthCandidate(
+    target?: CodexAccountSelectionTarget
+  ): LegacyCodexRateLimitAuthCandidate | null {
+    const normalizedTarget = normalizeCodexAccountSelectionTarget(target)
+    if (normalizedTarget.runtime !== 'host') {
+      return null
+    }
+
+    const settings = this.store.getSettings()
+    const accountId = getSelectedCodexAccountIdForTarget(settings, normalizedTarget)
+    const account = this.getActiveAccount(settings.codexManagedAccounts, accountId)
+    if (!account || this.getWslManagedHomePath(account)) {
+      return null
+    }
+
+    const legacyHomePath = this.getLegacyHostLaunchHomePath(account.id)
+    if (!this.isLegacyHostLaunchHomeMarkedForAccount(legacyHomePath, account.id)) {
+      return null
+    }
+
+    const legacyAuthPath = join(legacyHomePath, 'auth.json')
+    if (!existsSync(legacyAuthPath)) {
+      return null
+    }
+
+    const legacyAuthJson = readFileSync(legacyAuthPath, 'utf-8')
+    const managedAuthPath = join(account.managedHomePath, 'auth.json')
+    const managedAuthJson = existsSync(managedAuthPath)
+      ? readFileSync(managedAuthPath, 'utf-8')
+      : null
+
+    if (!this.runtimeAuthMatchesAccount(legacyAuthJson, account, managedAuthJson)) {
+      return null
+    }
+
+    return {
+      accountId: account.id,
+      codexHomePath: legacyHomePath,
+      authJson: legacyAuthJson
+    }
+  }
+
+  adoptLegacyRateLimitAuthCandidate(candidate: LegacyCodexRateLimitAuthCandidate): boolean {
+    const settings = this.store.getSettings()
+    const account = this.getActiveAccount(settings.codexManagedAccounts, candidate.accountId)
+    if (!account || this.getWslManagedHomePath(account)) {
+      return false
+    }
+    if (!this.isLegacyHostLaunchHomeMarkedForAccount(candidate.codexHomePath, account.id)) {
+      return false
+    }
+
+    const candidateAuthPath = join(candidate.codexHomePath, 'auth.json')
+    const candidateAuthJson = existsSync(candidateAuthPath)
+      ? readFileSync(candidateAuthPath, 'utf-8')
+      : candidate.authJson
+    const managedAuthPath = join(account.managedHomePath, 'auth.json')
+    const managedAuthJson = existsSync(managedAuthPath)
+      ? readFileSync(managedAuthPath, 'utf-8')
+      : null
+    if (!this.runtimeAuthMatchesAccount(candidateAuthJson, account, managedAuthJson)) {
+      return false
+    }
+
+    mkdirSync(account.managedHomePath, { recursive: true })
+    writeFileAtomically(managedAuthPath, candidateAuthJson, { mode: 0o600 })
+    if (getSelectedCodexAccountIdForTarget(settings, { runtime: 'host' }) === account.id) {
+      this.writeRuntimeAuth(candidateAuthJson)
+      this.lastSyncedAccountId = account.id
+    }
+    return true
   }
 
   private readBackRefreshedTokens(options: {
@@ -646,13 +730,15 @@ export class CodexRuntimeHomeService {
   private runtimeAuthMatchesAccount(
     runtimeAuthContents: string,
     activeAccount: CodexManagedAccount,
-    managedAuthContents: string
+    managedAuthContents: string | null
   ): boolean {
     const identity = this.readIdentityFromAuthContents(runtimeAuthContents)
     if (!identity) {
       return false
     }
-    const managedIdentity = this.readIdentityFromAuthContents(managedAuthContents)
+    const managedIdentity = managedAuthContents
+      ? this.readIdentityFromAuthContents(managedAuthContents)
+      : null
 
     // Why: old live Codex PTYs can still write refreshed tokens into the
     // shared runtime home after the user switches accounts. Never persist
@@ -914,6 +1000,26 @@ export class CodexRuntimeHomeService {
     const metadataDir = join(app.getPath('userData'), 'codex-runtime-home')
     mkdirSync(metadataDir, { recursive: true })
     return metadataDir
+  }
+
+  private getLegacyHostLaunchHomePath(accountId: string): string {
+    const segment = `account-${createHash('sha256').update(accountId).digest('hex').slice(0, 32)}`
+    return join(this.getRuntimeMetadataDir(), 'launch', 'host', segment, 'home')
+  }
+
+  private isLegacyHostLaunchHomeMarkedForAccount(homePath: string, accountId: string): boolean {
+    try {
+      const parsed: unknown = JSON.parse(
+        readFileSync(join(homePath, LEGACY_LAUNCH_HOME_MARKER), 'utf-8')
+      )
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return false
+      }
+      const marker = parsed as { version?: unknown; accountId?: unknown }
+      return marker.version === LEGACY_LAUNCH_HOME_MARKER_VERSION && marker.accountId === accountId
+    } catch {
+      return false
+    }
   }
 
   private getLegacyHostActiveHomePath(): string {

@@ -352,6 +352,119 @@ describe('RateLimitService', () => {
     )
   })
 
+  it('repairs active Codex usage with matching legacy launch-home auth after an auth error', async () => {
+    const service = new RateLimitService()
+    const candidate = {
+      accountId: 'account-1',
+      codexHomePath: 'legacy-launch-home',
+      authJson: '{"tokens":"legacy"}\n'
+    }
+    const adopter = vi.fn(() => true)
+    service.setCodexHomePathResolver(() => 'shared-runtime-home')
+    service.setCodexLegacyAuthRepair(
+      vi.fn(() => candidate),
+      adopter
+    )
+
+    vi.mocked(fetchClaudeRateLimits).mockResolvedValueOnce(okProvider('claude', 10, Date.now()))
+    vi.mocked(fetchCodexRateLimits)
+      .mockResolvedValueOnce(errorProvider('codex', 'Please sign in again.'))
+      .mockResolvedValueOnce(okProvider('codex', 12, Date.now()))
+
+    await service.refresh()
+
+    expect(fetchCodexRateLimits).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ codexHomePath: 'shared-runtime-home' })
+    )
+    expect(fetchCodexRateLimits).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ codexHomePath: 'legacy-launch-home' })
+    )
+    expect(adopter).toHaveBeenCalledWith(candidate)
+    expect(service.getState().codex).toMatchObject({
+      status: 'ok',
+      session: expect.objectContaining({ usedPercent: 12 })
+    })
+  })
+
+  it('does not inspect legacy Codex auth when the primary usage fetch succeeds', async () => {
+    const service = new RateLimitService()
+    const resolver = vi.fn(() => ({
+      accountId: 'account-1',
+      codexHomePath: 'legacy-launch-home',
+      authJson: '{"tokens":"legacy"}\n'
+    }))
+    service.setCodexHomePathResolver(() => 'shared-runtime-home')
+    service.setCodexLegacyAuthRepair(
+      resolver,
+      vi.fn(() => true)
+    )
+
+    vi.mocked(fetchClaudeRateLimits).mockResolvedValueOnce(okProvider('claude', 10, Date.now()))
+    vi.mocked(fetchCodexRateLimits).mockResolvedValueOnce(okProvider('codex', 20, Date.now()))
+
+    await service.refresh()
+
+    expect(fetchCodexRateLimits).toHaveBeenCalledTimes(1)
+    expect(resolver).not.toHaveBeenCalled()
+    expect(service.getState().codex?.status).toBe('ok')
+  })
+
+  it('does not retry legacy Codex auth for non-auth usage failures', async () => {
+    const service = new RateLimitService()
+    const resolver = vi.fn(() => ({
+      accountId: 'account-1',
+      codexHomePath: 'legacy-launch-home',
+      authJson: '{"tokens":"legacy"}\n'
+    }))
+    const adopter = vi.fn(() => true)
+    service.setCodexHomePathResolver(() => 'shared-runtime-home')
+    service.setCodexLegacyAuthRepair(resolver, adopter)
+
+    vi.mocked(fetchClaudeRateLimits).mockResolvedValueOnce(okProvider('claude', 10, Date.now()))
+    vi.mocked(fetchCodexRateLimits).mockResolvedValueOnce(errorProvider('codex', 'RPC timeout'))
+
+    await service.refresh()
+
+    expect(fetchCodexRateLimits).toHaveBeenCalledTimes(1)
+    expect(resolver).not.toHaveBeenCalled()
+    expect(adopter).not.toHaveBeenCalled()
+    expect(service.getState().codex).toMatchObject({
+      status: 'error',
+      error: 'RPC timeout'
+    })
+  })
+
+  it('keeps the original Codex auth error when the legacy auth retry fails', async () => {
+    const service = new RateLimitService()
+    const candidate = {
+      accountId: 'account-1',
+      codexHomePath: 'legacy-launch-home',
+      authJson: '{"tokens":"legacy"}\n'
+    }
+    const adopter = vi.fn(() => true)
+    service.setCodexHomePathResolver(() => 'shared-runtime-home')
+    service.setCodexLegacyAuthRepair(
+      vi.fn(() => candidate),
+      adopter
+    )
+
+    vi.mocked(fetchClaudeRateLimits).mockResolvedValueOnce(okProvider('claude', 10, Date.now()))
+    vi.mocked(fetchCodexRateLimits)
+      .mockResolvedValueOnce(errorProvider('codex', 'Please sign in again.'))
+      .mockResolvedValueOnce(errorProvider('codex', 'Please reauthenticate.'))
+
+    await service.refresh()
+
+    expect(fetchCodexRateLimits).toHaveBeenCalledTimes(2)
+    expect(adopter).not.toHaveBeenCalled()
+    expect(service.getState().codex).toMatchObject({
+      status: 'error',
+      error: 'Please sign in again.'
+    })
+  })
+
   it('does not fetch host Codex usage when WSL home resolution fails', async () => {
     const service = new RateLimitService()
     const resolver = vi.fn(() => null)

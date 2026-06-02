@@ -1073,6 +1073,10 @@ app.whenReady().then(async () => {
   rateLimits.setCodexHomePathResolver((target) =>
     codexRuntimeHome!.prepareForRateLimitFetch(target)
   )
+  rateLimits.setCodexLegacyAuthRepair(
+    (target) => codexRuntimeHome!.getLegacyRateLimitAuthCandidate(target),
+    (candidate) => codexRuntimeHome!.adoptLegacyRateLimitAuthCandidate(candidate)
+  )
   rateLimits.setCodexFetchTarget(getInitialCodexRateLimitTarget(store.getSettings()))
   rateLimits.setClaudeFetchTarget(getInitialClaudeRateLimitTarget(store.getSettings()))
   rateLimits.setClaudeAuthPreparationResolver((target) =>
