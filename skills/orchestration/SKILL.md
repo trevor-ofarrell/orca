@@ -13,6 +13,8 @@ description: >-
 
 # Orca Inter-Agent Orchestration
 
+Orchestration is Orca's structured coordination layer for agent messages, task ownership, dispatch state, and worker completion tracking.
+
 Use this skill when coordination state matters. For lightweight terminal prompts or basic worktree/terminal/built-in-browser control, use `orca-cli`.
 
 ## When To Use
@@ -67,6 +69,8 @@ Rules:
 - Message types include `status`, `dispatch`, `worker_done`, `merge_ready`, `escalation`, `handoff`, `decision_gate`, and `heartbeat`.
 
 ## Tasks And Dispatch
+
+A task is the work item, a dispatch assigns it to a terminal, and a gate blocks progress until a coordinator or user decision is recorded.
 
 ```bash
 orca orchestration task-create --spec <text> [--deps <json_array>] [--parent <task_id>] [--json]

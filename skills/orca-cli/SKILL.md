@@ -51,6 +51,8 @@ orca worktree ps --environment <name> --json
 
 ## Worktrees
 
+An Orca worktree/workspace is Orca's tracked view of a repo checkout, its metadata, terminals, browser tabs, and UI state.
+
 Common commands:
 
 ```bash
@@ -101,6 +103,8 @@ orca worktree create --name task --run-hooks --json
 
 ## Worktree Comments
 
+A worktree comment is the short status text shown in Orca's workspace list/card for quick progress visibility.
+
 Coding agents should update the active worktree comment at meaningful checkpoints:
 
 ```bash
@@ -147,6 +151,8 @@ Terminal rules:
 
 ## Automations
 
+An automation is a scheduled Orca prompt run by a chosen provider against either a repo-created worktree or an existing workspace.
+
 ```bash
 orca automations list --json
 orca automations show <automationId> --json
@@ -164,6 +170,8 @@ Schedules accept `hourly`, `daily`, `weekdays`, `weekly`, 5-field cron, or RRULE
 Use `--repo <selector>` for a new worktree per run, or `--workspace <selector>` / `--workspace-mode existing` for an existing Orca worktree. `--repo` and `--workspace` are mutually exclusive. Use `--reuse-session` only for existing-workspace automations; if the previous terminal is gone, Orca falls back to a fresh session. Prefer `--disabled` while testing setup.
 
 ## Built-In Browser
+
+The built-in browser is Orca's embedded browser tab surface, scoped to Orca worktrees; it is not Chrome/Safari or desktop app UI.
 
 These commands control only Orca's embedded browser tabs. For external Chrome/Safari/webviews or Orca app chrome/settings, use the Computer Use skill/tool. If the user explicitly asks for Orca CLI desktop control, use `orca computer ...`; do not use browser commands for desktop UI.
 
