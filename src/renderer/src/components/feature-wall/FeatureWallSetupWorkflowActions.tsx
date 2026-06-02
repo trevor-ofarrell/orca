@@ -225,7 +225,7 @@ export function SetupScriptAction(props: { reducedMotion: boolean }): React.JSX.
         </Button>
       </div>
       {!canConfigure ? (
-        <p className="max-w-[48ch] text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Add a git project first, then configure the setup script for that repository.
         </p>
       ) : null}
