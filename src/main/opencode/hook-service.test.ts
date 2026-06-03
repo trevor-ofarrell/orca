@@ -503,9 +503,9 @@ describe('OpenCodeHookService overlay mode (user OPENCODE_CONFIG_DIR set)', () =
 
   it('rebuilding the overlay for the same ptyId does not corrupt the user dir', () => {
     // Mirrors the daemon cold-restore code path that calls buildPtyEnv with
-    // the same sessionId across restarts. Each rebuild must clear the prior
-    // overlay safely (no symlink-walk into user data) and produce a fresh
-    // overlay with both user files and Orca's plugin.
+    // the same sessionId across restarts. Each rebuild must refresh the prior
+    // overlay safely (no symlink-walk into user data) and keep both user files
+    // and Orca's plugin reachable.
     const service = new OpenCodeHookService()
     service.buildPtyEnv(ptyId, userConfigDir)
     service.buildPtyEnv(ptyId, userConfigDir)
@@ -515,5 +515,29 @@ describe('OpenCodeHookService overlay mode (user OPENCODE_CONFIG_DIR set)', () =
       readFileSync(join(env.OPENCODE_CONFIG_DIR!, 'plugins', 'orca-opencode-status.js'), 'utf8')
     ).toContain('OrcaOpenCodeStatusPlugin')
     expectUserConfigIntact()
+  })
+
+  it('reconciles stale mirrored entries while preserving OpenCode runtime files', () => {
+    const service = new OpenCodeHookService()
+    const firstEnv = service.buildPtyEnv(ptyId, userConfigDir)
+    const overlayDir = firstEnv.OPENCODE_CONFIG_DIR!
+
+    mkdirSync(join(overlayDir, 'node_modules', 'opencode-runtime'), { recursive: true })
+    writeFileSync(join(overlayDir, 'node_modules', 'opencode-runtime', 'index.js'), '')
+
+    rmSync(join(userConfigDir, 'auth.json'), { force: true })
+    writeFileSync(join(userConfigDir, 'auth.json'), 'rotated-user-auth-token')
+    rmSync(join(userConfigDir, 'plugins', 'user-plugin.js'), { force: true })
+    writeFileSync(join(userConfigDir, 'plugins', 'new-plugin.js'), 'export default "new"')
+
+    const secondEnv = service.buildPtyEnv(ptyId, userConfigDir)
+
+    expect(secondEnv.OPENCODE_CONFIG_DIR).toBe(overlayDir)
+    expect(readFileSync(join(overlayDir, 'auth.json'), 'utf8')).toBe('rotated-user-auth-token')
+    expect(existsSync(join(overlayDir, 'plugins', 'user-plugin.js'))).toBe(false)
+    expect(readFileSync(join(overlayDir, 'plugins', 'new-plugin.js'), 'utf8')).toBe(
+      'export default "new"'
+    )
+    expect(existsSync(join(overlayDir, 'node_modules', 'opencode-runtime', 'index.js'))).toBe(true)
   })
 })

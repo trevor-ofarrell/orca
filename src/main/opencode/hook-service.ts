@@ -6,8 +6,8 @@ import { app } from 'electron'
 import { join } from 'path'
 import {
   existsSync,
-  lstatSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   realpathSync,
   statSync,
@@ -15,12 +15,18 @@ import {
   writeFileSync
 } from 'fs'
 import { createHash } from 'crypto'
-import { mirrorEntry } from '../pty/overlay-mirror'
+import { mirrorEntry, safeRemoveTree } from '../pty/overlay-mirror'
 
 const ORCA_OPENCODE_PLUGIN_FILE = 'orca-opencode-status.js'
 const OPENCODE_LEGACY_HOOKS_DIR = 'opencode-hooks'
 const OPENCODE_OVERLAY_DIR = 'opencode-config-overlays'
 const OPENCODE_SHARED_CONFIG_DIR = 'shared'
+const OPENCODE_OVERLAY_MANIFEST_FILE = '.orca-opencode-overlay-manifest.json'
+
+type OpenCodeOverlayManifest = {
+  topLevelEntries: string[]
+  pluginEntries: string[]
+}
 
 // Why: the id passed in by pty.ts's daemon path is a sessionId shaped like
 // "<worktreeId>@@<uuid>" where worktreeId itself contains "::" and a
@@ -406,14 +412,39 @@ export class OpenCodeHookService {
     return join(app.getPath('userData'), OPENCODE_LEGACY_HOOKS_DIR, OPENCODE_SHARED_CONFIG_DIR)
   }
 
-  private mirrorEntryIfMissing(sourcePath: string, targetPath: string): void {
+  private readOverlayManifest(overlayDir: string): OpenCodeOverlayManifest {
     try {
-      lstatSync(targetPath)
-      return
+      const parsed = JSON.parse(
+        readFileSync(join(overlayDir, OPENCODE_OVERLAY_MANIFEST_FILE), 'utf8')
+      ) as Partial<OpenCodeOverlayManifest>
+      return {
+        topLevelEntries: Array.isArray(parsed.topLevelEntries) ? parsed.topLevelEntries : [],
+        pluginEntries: Array.isArray(parsed.pluginEntries) ? parsed.pluginEntries : []
+      }
     } catch {
-      // Missing target: create it below.
+      return { topLevelEntries: [], pluginEntries: [] }
     }
-    mirrorEntry(sourcePath, targetPath)
+  }
+
+  private writeOverlayManifest(overlayDir: string, manifest: OpenCodeOverlayManifest): void {
+    writeFileSync(
+      join(overlayDir, OPENCODE_OVERLAY_MANIFEST_FILE),
+      `${JSON.stringify(manifest, null, 2)}\n`
+    )
+  }
+
+  private clearManifestEntries(overlayDir: string, manifest: OpenCodeOverlayManifest): void {
+    for (const entryName of manifest.topLevelEntries) {
+      safeRemoveTree(join(overlayDir, entryName))
+    }
+
+    const overlayPluginsDir = join(overlayDir, 'plugins')
+    for (const entryName of manifest.pluginEntries) {
+      if (entryName === ORCA_OPENCODE_PLUGIN_FILE) {
+        continue
+      }
+      safeRemoveTree(join(overlayPluginsDir, entryName))
+    }
   }
 
   // Why: walks the user's OPENCODE_CONFIG_DIR top-level entries. The
@@ -423,6 +454,14 @@ export class OpenCodeHookService {
   // top-level entry via symlink/junction so user edits propagate live on
   // POSIX (and on Windows-with-developer-mode) without copying files.
   private mirrorUserConfig(sourceDir: string, overlayDir: string): void {
+    const previousManifest = this.readOverlayManifest(overlayDir)
+    // Why: source-scoped overlays persist across terminals. Only remove paths
+    // Orca previously mirrored, so deleted/replaced user config cannot stay
+    // stale while OpenCode-owned runtime dirs such as node_modules survive.
+    this.clearManifestEntries(overlayDir, previousManifest)
+
+    const nextManifest: OpenCodeOverlayManifest = { topLevelEntries: [], pluginEntries: [] }
+
     for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
       const sourcePath = join(sourceDir, entry.name)
 
@@ -467,17 +506,21 @@ export class OpenCodeHookService {
             if (pluginEntry.name === ORCA_OPENCODE_PLUGIN_FILE) {
               continue
             }
-            this.mirrorEntryIfMissing(
+            mirrorEntry(
               join(resolvedSource, pluginEntry.name),
               join(overlayPluginsDir, pluginEntry.name)
             )
+            nextManifest.pluginEntries.push(pluginEntry.name)
           }
           continue
         }
       }
 
-      this.mirrorEntryIfMissing(sourcePath, join(overlayDir, entry.name))
+      mirrorEntry(sourcePath, join(overlayDir, entry.name))
+      nextManifest.topLevelEntries.push(entry.name)
     }
+
+    this.writeOverlayManifest(overlayDir, nextManifest)
   }
 
   // Why: write Orca's status plugin into the overlay's plugins/ dir. The
