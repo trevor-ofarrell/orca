@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { Check, Ellipsis, Import, Monitor, Plus, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -59,7 +59,7 @@ export function BrowserToolbarMenu({
   const browserSessionImportState = useAppStore((s) => s.browserSessionImportState)
   const setBrowserPageViewportPreset = useAppStore((s) => s.setBrowserPageViewportPreset)
   const browserCookieTourStepActive = useAppStore(
-    (s) => s.activeContextualTourId === 'browser' && s.activeContextualTourStepIndex === 2
+    (s) => s.activeContextualTourId === 'browser' && s.activeContextualTourStepIndex >= 1
   )
 
   const applyViewportPreset = (nextId: BrowserViewportPresetId | null): void => {
@@ -78,9 +78,10 @@ export function BrowserToolbarMenu({
   const [menuOpen, setMenuOpen] = useState(false)
   const mountedRef = useMountedRef()
 
-  useEffect(() => {
-    // Why: step 3 anchors on Import Cookies inside this menu, so open it when
-    // the browser tour reaches the final step and close it when leaving.
+  useLayoutEffect(() => {
+    // Why: step 3's target lives inside this menu, and tour advancement only
+    // visits steps whose targets are measurable. Open from step 2 onward so Next
+    // can reach Import Cookies before the overlay's layout measurement runs.
     setMenuOpen(browserCookieTourStepActive)
   }, [browserCookieTourStepActive])
 
@@ -229,7 +230,10 @@ export function BrowserToolbarMenu({
             }}
           >
             <DropdownMenuSubTrigger
-              disabled={browserSessionImportState?.status === 'importing'}
+              disabled={
+                browserSessionImportState?.profileId === effectiveProfileId &&
+                browserSessionImportState.status === 'importing'
+              }
               data-contextual-tour-target="browser-import-cookies-control"
             >
               <Import className="mr-2 size-3.5" />
