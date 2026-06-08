@@ -6390,6 +6390,17 @@ export default function TaskPage(): React.JSX.Element {
     }
   }, [connectJira, jiraApiTokenDraft, jiraEmailDraft, jiraSiteUrlDraft])
 
+  // Why: detail/drill-down views own their own breadcrumb chrome — the list
+  // filter row (source toggles, Issues/Projects/Views, search presets) is
+  // redundant and steals vertical space from the detail pane.
+  const taskPageListChromeHidden =
+    Boolean(dialogWorkItem) ||
+    Boolean(gitlabDialogItem) ||
+    Boolean(selectedJiraIssue) ||
+    Boolean(selectedLinearIssue) ||
+    Boolean(selectedLinearProject) ||
+    Boolean(selectedLinearCustomView)
+
   return (
     <div className="relative flex h-full min-h-0 flex-1 overflow-hidden bg-background text-foreground">
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -6403,10 +6414,7 @@ export default function TaskPage(): React.JSX.Element {
           <div
             className={cn(
               'flex-none flex flex-col gap-3',
-              // Why: GitHub detail views (PR + Issue) fill the entire right
-              // pane — the list filter row above them is not relevant and
-              // would visually duplicate the detail page's own breadcrumb.
-              taskSource === 'github' && dialogWorkItem && 'hidden'
+              taskPageListChromeHidden && 'hidden'
             )}
           >
             <section className="flex flex-col gap-3">
