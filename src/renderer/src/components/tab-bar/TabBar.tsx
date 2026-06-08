@@ -108,6 +108,8 @@ type TabBarProps = {
     sourceVisibleTabId?: string
   ) => void
   hoveredTabInsertion?: HoveredTabInsertion | null
+  /** Floating workspace panels are rounded; skip tab top borders that clash with the curve. */
+  tabStripChrome?: 'default' | 'floating-panel'
 }
 
 type TabItem =
@@ -206,8 +208,10 @@ function TabBarInner({
   onPinFile,
   tabBarOrder,
   onCreateSplitGroup,
-  hoveredTabInsertion
+  hoveredTabInsertion,
+  tabStripChrome = 'default'
 }: TabBarProps): React.JSX.Element {
+  const includeTopTabBorder = tabStripChrome !== 'floating-panel'
   const newTerminalShortcut = useShortcutLabel('tab.newTerminal')
   const newBrowserShortcut = useShortcutLabel('tab.newBrowser')
   const newSimulatorShortcut = useShortcutLabel('tab.newSimulator')
@@ -865,6 +869,7 @@ function TabBarInner({
                   }
                   dragData={dragData}
                   dropIndicator={dropIndicatorByVisibleId.get(item.id) ?? null}
+                  includeTopTabBorder={includeTopTabBorder}
                 />
               )
             }
@@ -886,6 +891,7 @@ function TabBarInner({
                   onTogglePin={() => togglePinned(item)}
                   dragData={dragData}
                   dropIndicator={dropIndicatorByVisibleId.get(item.id) ?? null}
+                  includeTopTabBorder={includeTopTabBorder}
                 />
               )
             }
@@ -921,6 +927,7 @@ function TabBarInner({
                   }
                   dragData={dragData}
                   dropIndicator={dropIndicatorByVisibleId.get(item.id) ?? null}
+                  includeTopTabBorder={includeTopTabBorder}
                 />
               )
             }
@@ -946,6 +953,7 @@ function TabBarInner({
                 }
                 dragData={dragData}
                 dropIndicator={dropIndicatorByVisibleId.get(item.id) ?? null}
+                includeTopTabBorder={includeTopTabBorder}
               />
             )
           })}
