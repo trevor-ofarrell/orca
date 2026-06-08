@@ -95,11 +95,11 @@ describe('ClaudeAgentTeamsService', () => {
       stdout: '%1\n%2\n'
     })
     expect(splitCalls).toEqual([
-      { handle: 'leader-handle', direction: 'horizontal', command: undefined, envPane: '%2' }
+      { handle: 'leader-handle', direction: 'vertical', command: undefined, envPane: '%2' }
     ])
   })
 
-  it('stacks repeated main-vertical teammates downward in the teammate column', async () => {
+  it('puts the first teammate on the right, then stacks repeated main-vertical teammates downward', async () => {
     const { service, teamId, token, leaderPane, api, splitCalls } = createServiceWithLeader()
     const request = (argv: string[]) =>
       service.handleTmuxCompat({ teamId, token, envPane: leaderPane, argv }, api)
@@ -110,9 +110,9 @@ describe('ClaudeAgentTeamsService', () => {
     await request(['split-window', '-t', leaderPane, '-h', '-l', '70%', '-P', '-F', '#{pane_id}'])
 
     expect(splitCalls.map((call) => [call.handle, call.direction, call.envPane])).toEqual([
-      ['leader-handle', 'horizontal', '%2'],
-      ['teammate-1', 'vertical', '%3'],
-      ['teammate-2', 'vertical', '%4']
+      ['leader-handle', 'vertical', '%2'],
+      ['teammate-1', 'horizontal', '%3'],
+      ['teammate-2', 'horizontal', '%4']
     ])
   })
 
@@ -135,9 +135,9 @@ describe('ClaudeAgentTeamsService', () => {
       stdout: '%1\n%2\n%4\n'
     })
     expect(splitCalls.map((call) => [call.handle, call.direction, call.envPane])).toEqual([
-      ['leader-handle', 'horizontal', '%2'],
-      ['teammate-1', 'vertical', '%3'],
-      ['teammate-1', 'vertical', '%4']
+      ['leader-handle', 'vertical', '%2'],
+      ['teammate-1', 'horizontal', '%3'],
+      ['teammate-1', 'horizontal', '%4']
     ])
   })
 

@@ -250,7 +250,7 @@ export class ClaudeAgentTeamsTmuxDispatcher {
     if (team.mainVertical) {
       team.mainVertical.lastColumnPane = fakePaneId
     } else if (
-      splitTarget.direction === 'horizontal' &&
+      splitTarget.direction === 'vertical' &&
       splitTarget.pane.fakePaneId === team.leaderPane
     ) {
       team.mainVertical = { mainPane: team.leaderPane, lastColumnPane: fakePaneId }
@@ -265,10 +265,12 @@ export class ClaudeAgentTeamsTmuxDispatcher {
     if (horizontal && team.mainVertical?.lastColumnPane) {
       return {
         pane: team.panes.get(team.mainVertical.lastColumnPane) ?? targetPane,
-        direction: 'vertical'
+        direction: 'horizontal'
       }
     }
-    return { pane: targetPane, direction: horizontal ? 'horizontal' : 'vertical' }
+    // Why: tmux `split-window -h` means left/right panes; Orca names that
+    // layout by the vertical divider it creates.
+    return { pane: targetPane, direction: horizontal ? 'vertical' : 'horizontal' }
   }
 
   private resolvePaneOrWindow(team: AgentTeam, target: string): ResolvedTarget {
