@@ -499,6 +499,7 @@ async function refreshLocalBaseRefForWorktreeCreate(
     return evaluation.result
   }
 
+  const resultBase = { baseRef: evaluation.baseRef, localBranch: evaluation.localBranch }
   try {
     if (evaluation.ownerWorktreePath) {
       const { stdout: worktreeListOutput } = await gitExecFileAsync(
@@ -507,19 +508,8 @@ async function refreshLocalBaseRefForWorktreeCreate(
       )
       const worktrees = parseWorktreeList(translateWslOutputPaths(worktreeListOutput, repoPath))
       const currentOwner = worktrees.find((wt) => wt.branch === evaluation.fullRef)
-      if (!currentOwner) {
-        return {
-          baseRef: evaluation.baseRef,
-          localBranch: evaluation.localBranch,
-          status: 'skipped_error'
-        }
-      }
-      if (currentOwner.path !== evaluation.ownerWorktreePath) {
-        return {
-          baseRef: evaluation.baseRef,
-          localBranch: evaluation.localBranch,
-          status: 'skipped_error'
-        }
+      if (!currentOwner || currentOwner.path !== evaluation.ownerWorktreePath) {
+        return { ...resultBase, status: 'skipped_error' }
       }
       const { stdout: status } = await gitExecFileAsync(
         ['status', '--porcelain', '--untracked-files=no'],
@@ -527,19 +517,13 @@ async function refreshLocalBaseRefForWorktreeCreate(
       )
       if (status.trim()) {
         return {
-          baseRef: evaluation.baseRef,
-          localBranch: evaluation.localBranch,
+          ...resultBase,
           status: 'skipped_dirty_worktree',
           ownerWorktreePath: currentOwner.path
         }
       }
       await gitExecFileAsync(['reset', '--hard', evaluation.remoteOid], { cwd: currentOwner.path })
-      return {
-        baseRef: evaluation.baseRef,
-        localBranch: evaluation.localBranch,
-        status: 'updated',
-        ownerWorktreePath: currentOwner.path
-      }
+      return { ...resultBase, status: 'updated', ownerWorktreePath: currentOwner.path }
     }
 
     // Why: no owner worktree — fast-forward the bare ref. The expected-old-OID
@@ -549,19 +533,11 @@ async function refreshLocalBaseRefForWorktreeCreate(
       ['update-ref', evaluation.fullRef, evaluation.remoteOid, evaluation.localOid],
       { cwd: repoPath }
     )
-    return {
-      baseRef: evaluation.baseRef,
-      localBranch: evaluation.localBranch,
-      status: 'updated'
-    }
+    return { ...resultBase, status: 'updated' }
   } catch {
     // update-ref/reset can fail on locked refs, filesystem errors, or unusual
     // worktree states. Worktree creation should still proceed.
-    return {
-      baseRef: evaluation.baseRef,
-      localBranch: evaluation.localBranch,
-      status: 'skipped_error'
-    }
+    return { ...resultBase, status: 'skipped_error' }
   }
 }
 

@@ -1006,6 +1006,7 @@ async function refreshLocalBaseRefForRemoteWorktreeCreate(
     return evaluation.result
   }
 
+  const resultBase = { baseRef: evaluation.baseRef, localBranch: evaluation.localBranch }
   try {
     await provider.refreshLocalBaseRefForWorktreeCreate({
       repoPath,
@@ -1014,17 +1015,12 @@ async function refreshLocalBaseRefForRemoteWorktreeCreate(
       ...(evaluation.ownerWorktreePath ? { ownerWorktreePath: evaluation.ownerWorktreePath } : {})
     })
     return {
-      baseRef: evaluation.baseRef,
-      localBranch: evaluation.localBranch,
+      ...resultBase,
       status: 'updated',
       ...(evaluation.ownerWorktreePath ? { ownerWorktreePath: evaluation.ownerWorktreePath } : {})
     }
   } catch {
-    return {
-      baseRef: evaluation.baseRef,
-      localBranch: evaluation.localBranch,
-      status: 'skipped_error'
-    }
+    return { ...resultBase, status: 'skipped_error' }
   }
 }
 
