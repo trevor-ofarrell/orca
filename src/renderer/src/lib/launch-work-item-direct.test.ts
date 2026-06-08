@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AppState } from '@/store'
 
 const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
@@ -149,7 +150,7 @@ describe('launchWorkItemDirect', () => {
       })),
       updateWorktreeMeta: vi.fn(async () => undefined),
       setSidebarOpen: vi.fn()
-    } as typeof storeState.value
+    } as typeof mocks.store
     // @ts-expect-error -- test shim
     globalThis.window = { api: mockApi }
     mockApi.agentTrust.markTrusted.mockResolvedValue(undefined)
@@ -231,7 +232,7 @@ describe('launchWorkItemDirect', () => {
   })
 
   it('uses remote cursor-agent detection, trust preflight, and paste launch for SSH repos', async () => {
-    storeState.value.repos = [
+    mocks.store.repos = [
       {
         id: 'repo-ssh',
         path: '/home/orca/repo',
@@ -241,8 +242,8 @@ describe('launchWorkItemDirect', () => {
         connectionId: 'ssh-1'
       }
     ] as AppState['repos']
-    storeState.value.settings = { defaultTuiAgent: 'cursor' } as AppState['settings']
-    storeState.value.ensureRemoteDetectedAgents.mockResolvedValue(['cursor'])
+    mocks.store.settings = { defaultTuiAgent: 'cursor' } as AppState['settings']
+    mocks.store.ensureRemoteDetectedAgents.mockResolvedValue(['cursor'])
     vi.mocked(pickTuiAgent).mockReturnValue('cursor')
     vi.mocked(buildAgentDraftLaunchPlan).mockReturnValue(null)
     vi.mocked(buildAgentStartupPlan).mockReturnValue({
@@ -251,7 +252,7 @@ describe('launchWorkItemDirect', () => {
       expectedProcess: 'cursor-agent',
       followupPrompt: null
     })
-    storeState.value.createWorktree.mockResolvedValue({
+    mocks.store.createWorktree.mockResolvedValue({
       worktree: { id: 'wt-ssh', path: '/home/orca/repo-worktrees/issue-77' }
     })
 
@@ -268,8 +269,8 @@ describe('launchWorkItemDirect', () => {
       }
     })
 
-    expect(storeState.value.ensureDetectedAgents).not.toHaveBeenCalled()
-    expect(storeState.value.ensureRemoteDetectedAgents).toHaveBeenCalledWith('ssh-1')
+    expect(mocks.store.ensureDetectedAgents).not.toHaveBeenCalled()
+    expect(mocks.store.ensureRemoteDetectedAgents).toHaveBeenCalledWith('ssh-1')
     expect(mockApi.agentTrust.markTrusted).toHaveBeenCalledWith({
       preset: 'cursor',
       workspacePath: '/home/orca/repo-worktrees/issue-77',
