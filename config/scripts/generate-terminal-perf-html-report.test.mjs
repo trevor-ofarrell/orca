@@ -77,6 +77,7 @@ describe('generate-terminal-perf-html-report', () => {
         'frames=60',
         'median=12.4ms',
         'worst=44.8ms',
+        'revisit=28.6ms',
         'scroll=61.0ms',
         'restore=320.0ms',
         'maxTimerDrift=8.0ms',
@@ -102,6 +103,7 @@ describe('generate-terminal-perf-html-report', () => {
     expect(html).toContain('2026-06-09T10:00:00.000Z')
     expect(html).toContain('Same workspace panes: typing latency')
     expect(html).toContain('opencode-scale-same-workspace-25')
+    expect(html).toContain('28.6ms')
     expect(html).toContain('<table>')
     expect(html).toContain('Pass')
     expect(html).not.toContain('browser-unrelated')
@@ -113,6 +115,7 @@ describe('generate-terminal-perf-html-report', () => {
         'panes=100',
         'median=80.0ms',
         'worst=301.0ms',
+        'revisit=301.0ms',
         'rendererPeakQueuedChars=2097153',
         'rendererDroppedBacklogs=1'
       ].join(' '),
@@ -123,8 +126,8 @@ describe('generate-terminal-perf-html-report', () => {
     const result = generateTerminalPerfHtmlReport({ inputPaths: [reportPath], outputPath })
 
     const html = readFileSync(outputPath, 'utf8')
-    expect(result.failureCount).toBe(4)
-    expect(html).toContain('4 failures')
+    expect(result.failureCount).toBe(5)
+    expect(html).toContain('5 failures')
     expect(html).toContain('fail: Median typing 80.0ms &gt; 75.0ms')
     expect(html).toContain('Cross-workspace hidden panes')
   })

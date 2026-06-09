@@ -7,6 +7,7 @@ const DEFAULT_OUTPUT_PATH = 'test-results/terminal-perf-impact-report.html'
 const BUDGETS = {
   medianMs: 75,
   worstMs: 300,
+  revisitMs: 300,
   maxTimerDriftMs: 150,
   scrollMs: 150,
   restoreMs: 1000,
@@ -129,6 +130,7 @@ function normalizeRow(row) {
   const frames = parseCount(row.frames)
   const medianMs = parseMs(row.median)
   const worstMs = parseMs(row.worst)
+  const revisitMs = parseMs(row.revisit)
   const maxTimerDriftMs = parseMs(row.maxTimerDrift)
   const scrollMs = parseMs(row.scroll)
   const restoreMs = parseMs(row.restore)
@@ -142,6 +144,7 @@ function normalizeRow(row) {
     frames,
     medianMs,
     worstMs,
+    revisitMs,
     maxTimerDriftMs,
     scrollMs,
     restoreMs,
@@ -185,6 +188,7 @@ function labelForMetric(key) {
     {
       medianMs: 'Median typing',
       worstMs: 'Worst typing',
+      revisitMs: 'Revisit',
       maxTimerDriftMs: 'Timer drift',
       scrollMs: 'Scroll',
       restoreMs: 'Restore',
@@ -319,6 +323,7 @@ function renderTable(rows) {
     ['Frames', (row) => row.frames],
     ['Median', (row) => formatCell(row.medianMs, 'ms')],
     ['Worst', (row) => formatCell(row.worstMs, 'ms')],
+    ['Revisit', (row) => formatCell(row.revisitMs, 'ms')],
     ['Scroll', (row) => formatCell(row.scrollMs, 'ms')],
     ['Restore', (row) => formatCell(row.restoreMs, 'ms')],
     ['Drift', (row) => formatCell(row.maxTimerDriftMs, 'ms')],
@@ -362,7 +367,8 @@ function renderHtml({ generatedAt, inputPaths, rows }) {
         ]),
         chartSvg(`${label}: restore and scroll`, group, [
           { className: 'metric-f', key: 'restoreMs', label: 'Restore', suffix: 'ms' },
-          { className: 'metric-g', key: 'scrollMs', label: 'Scroll', suffix: 'ms' }
+          { className: 'metric-g', key: 'scrollMs', label: 'Scroll', suffix: 'ms' },
+          { className: 'metric-b', key: 'revisitMs', label: 'Revisit', suffix: 'ms' }
         ])
       ].join('')
     )

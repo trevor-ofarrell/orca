@@ -18,6 +18,7 @@ if (reportPaths.length === 0) {
 const BUDGETS = {
   maxMedianKeyLatencyMs: 75,
   maxWorstKeyLatencyMs: 300,
+  maxRevisitLatencyMs: 300,
   maxTimerDriftMs: 150,
   maxScrollLatencyMs: 150,
   maxRestoreLatencyMs: 1000,
@@ -127,6 +128,12 @@ function validateRow(row) {
     'worst typing latency',
     parseMs(row.worst, 'worst', row, failures),
     BUDGETS.maxWorstKeyLatencyMs,
+    'ms'
+  )
+  addBudgetCheck(
+    'revisit latency',
+    parseMs(row.revisit, 'revisit', row, failures),
+    BUDGETS.maxRevisitLatencyMs,
     'ms'
   )
   addBudgetCheck(
