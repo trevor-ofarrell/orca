@@ -115,12 +115,16 @@ export function shouldSkipHiddenRendererOutput({
   foreground,
   canRestoreHiddenOutput,
   startupRendererQueryWindowActive,
+  synchronizedOutputActive,
   data
 }: HiddenRendererSkipEligibility): boolean {
   if (
     foreground ||
     !canRestoreHiddenOutput ||
     startupRendererQueryWindowActive ||
+    // Why: DEC 2026 frames can arrive split across chunks; safe-looking rows
+    // may precede rich table/TUI bytes that need live xterm renderer state.
+    synchronizedOutputActive ||
     data.length === 0
   ) {
     return false

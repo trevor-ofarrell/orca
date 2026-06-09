@@ -2599,21 +2599,23 @@ export function connectPanePty(
       const foreground = shouldWritePtyOutputForeground(deps.isVisibleRef.current)
       const restoreAppliesToCurrentPty =
         hiddenOutputRestorePtyId !== null && transport.getPtyId() === hiddenOutputRestorePtyId
+      const synchronizedOutputStarted = containsSynchronizedOutputStart(data)
       const synchronizedHiddenOutput =
         !foreground &&
         (synchronizedHiddenOutputActive ||
-          containsSynchronizedOutputStart(data) ||
+          synchronizedOutputStarted ||
           containsSynchronizedOutputEnd(data))
-      if (
-        shouldSkipHiddenRendererOutput({
-          foreground,
-          canRestoreHiddenOutput: canUseHiddenOutputSnapshot(transport.getPtyId()),
-          startupRendererQueryWindowActive: isHiddenStartupRendererQueryWindowActive(),
-          synchronizedOutputActive: synchronizedHiddenOutput,
-          data
-        })
-      ) {
+      const shouldSkipHiddenOutput = shouldSkipHiddenRendererOutput({
+        foreground,
+        canRestoreHiddenOutput: canUseHiddenOutputSnapshot(transport.getPtyId()),
+        startupRendererQueryWindowActive: isHiddenStartupRendererQueryWindowActive(),
+        synchronizedOutputActive: synchronizedHiddenOutput,
+        data
+      })
+      if (shouldSkipHiddenOutput) {
         skipHiddenRendererOutput(data)
+      } else if (synchronizedHiddenOutput) {
+        writePtyOutputToXterm(data, foreground)
       } else if (
         (hiddenOutputRestoreNeeded || hiddenOutputRestoreInFlight) &&
         restoreAppliesToCurrentPty

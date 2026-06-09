@@ -3031,7 +3031,46 @@ describe('connectPanePty', () => {
     }
   })
 
-  it('restores safe split hidden synchronized output frames from the main snapshot', async () => {
+  it('keeps the safe tail of a rich hidden synchronized frame live', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport('pty-id')
+    const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+    transport.connect.mockImplementation(async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+      capturedDataCallback.current = callbacks.onData ?? null
+      return 'pty-id'
+    })
+    transportFactoryQueue.push(transport)
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps({
+      isVisibleRef: { current: false }
+    })
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(6)
+
+    expect(capturedDataCallback.current).not.toBeNull()
+    vi.useFakeTimers()
+    try {
+      const startChunk = '\x1b[?2026h\x1b[2J\x1b[Hsafe heading\r\n'
+      const richChunk = '| Sam Syntax | 😀 |\r\n'
+      const tailChunk = 'LONG_TABLE_SCROLL_RESTORE_marker\r\n\x1b[?2026l'
+
+      capturedDataCallback.current?.(startChunk)
+      capturedDataCallback.current?.(richChunk)
+      capturedDataCallback.current?.(tailChunk)
+
+      vi.advanceTimersByTime(50)
+      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(startChunk))
+      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(richChunk))
+      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(tailChunk))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps split hidden synchronized output frames on the live xterm path', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('pty-id')
     const capturedDataCallback: {
@@ -3065,37 +3104,30 @@ describe('connectPanePty', () => {
     const startChunk = '\x1b[?2026h'
     const plainRowChunk = '| Sam Syntax | Compiler | Online |\r\n'
     const endChunk = 'LONG_TABLE_SCROLL_RESTORE_marker\r\n\x1b[?2026l'
-    const visibleChunk = 'visible-after-hidden\r\n'
 
-    capturedDataCallback.current?.(startChunk, {
-      seq: startChunk.length,
-      rawLength: startChunk.length
-    })
-    capturedDataCallback.current?.(plainRowChunk, {
-      seq: startChunk.length + plainRowChunk.length,
-      rawLength: plainRowChunk.length
-    })
-    capturedDataCallback.current?.(endChunk, {
-      seq: startChunk.length + plainRowChunk.length + endChunk.length,
-      rawLength: endChunk.length
-    })
+    vi.useFakeTimers()
+    try {
+      capturedDataCallback.current?.(startChunk, {
+        seq: startChunk.length,
+        rawLength: startChunk.length
+      })
+      capturedDataCallback.current?.(plainRowChunk, {
+        seq: startChunk.length + plainRowChunk.length,
+        rawLength: plainRowChunk.length
+      })
+      capturedDataCallback.current?.(endChunk, {
+        seq: startChunk.length + plainRowChunk.length + endChunk.length,
+        rawLength: endChunk.length
+      })
 
-    expect(pane.terminal.write).not.toHaveBeenCalledWith(startChunk, expect.any(Function))
-    expect(pane.terminal.write).not.toHaveBeenCalledWith(plainRowChunk, expect.any(Function))
-    expect(pane.terminal.write).not.toHaveBeenCalledWith(endChunk, expect.any(Function))
-
-    ;(deps.isVisibleRef as { current: boolean }).current = true
-    capturedDataCallback.current?.(visibleChunk, {
-      seq: startChunk.length + plainRowChunk.length + endChunk.length + visibleChunk.length,
-      rawLength: visibleChunk.length
-    })
-    await flushAsyncTicks(20)
-
-    expect(getMainBufferSnapshot).toHaveBeenCalledWith('pty-id', { scrollbackRows: 5000 })
-    expect(pane.terminal.write).toHaveBeenCalledWith(
-      expect.stringContaining('snapshot table'),
-      expect.any(Function)
-    )
+      vi.advanceTimersByTime(50)
+      expect(getMainBufferSnapshot).not.toHaveBeenCalled()
+      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(startChunk))
+      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(plainRowChunk))
+      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(endChunk))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('queues visible split-pane PTY bytes when the pane is not active', async () => {

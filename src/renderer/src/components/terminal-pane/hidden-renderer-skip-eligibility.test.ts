@@ -73,7 +73,7 @@ describe('shouldSkipHiddenRendererOutput', () => {
     ).toBe(true)
   })
 
-  it('skips safe hidden synchronized redraw chunks when a snapshot restore is available', () => {
+  it('keeps hidden synchronized redraw chunks live', () => {
     expect(
       shouldSkipHiddenRendererOutput({
         foreground: false,
@@ -82,7 +82,7 @@ describe('shouldSkipHiddenRendererOutput', () => {
         synchronizedOutputActive: true,
         data: '\x1b[?2026h\x1b[1;1H\x1b[2J\x1b[32mready\x1b[0m\x1b[?25l\x1b[?2026l\n'
       })
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('keeps startup query windows live', () => {
