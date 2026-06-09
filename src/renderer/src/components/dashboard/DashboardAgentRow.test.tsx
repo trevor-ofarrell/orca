@@ -125,6 +125,16 @@ function classTokensForTaggedElement(markup: string, dataAttribute: string): str
   return classMatch[1].split(/\s+/).filter(Boolean)
 }
 
+function assistantMessageClassTokens(markup: string): string[] {
+  const className = classAttributes(markup).find((value) =>
+    value.includes('text-muted-foreground/80')
+  )
+  if (!className) {
+    throw new Error('Expected assistant message element in rendered markup')
+  }
+  return className.split(/\s+/).filter(Boolean)
+}
+
 describe('DashboardAgentRow', () => {
   it('uses the hover background as the focused-pane row highlight', () => {
     const markup = renderToStaticMarkup(
@@ -217,6 +227,42 @@ describe('DashboardAgentRow', () => {
     expect(dismissButtonClassTokens(markup)).toContain('group-hover/agent-row:opacity-100')
     expect(dismissButtonClassTokens(markup)).toContain('focus-visible:opacity-100')
     expect(classes.every((className) => !/\bgroup-hover:/.test(className))).toBe(true)
+  })
+
+  it('keeps assistant replies to one collapsed line by default', () => {
+    const markup = renderRow(
+      makeAgent({}, { lastAssistantMessage: 'First sentence. Second sentence. Third sentence.' })
+    )
+    const tokens = assistantMessageClassTokens(markup)
+
+    expect(tokens).toContain('h-[1lh]')
+    expect(tokens).toContain('truncate')
+    expect(tokens).toContain('whitespace-nowrap')
+    expect(tokens).not.toContain('h-[3lh]')
+  })
+
+  it('allows inline worktree cards to show a three-line assistant preview', () => {
+    const markup = renderToStaticMarkup(
+      <TooltipProvider>
+        <DashboardAgentRow
+          agent={makeAgent(
+            {},
+            { lastAssistantMessage: 'First sentence. Second sentence. Third sentence.' }
+          )}
+          onDismiss={vi.fn()}
+          onActivate={vi.fn()}
+          now={NOW}
+          hideIdentityIcon
+          hideExpand
+          assistantMessageCollapsedPreviewLines={3}
+        />
+      </TooltipProvider>
+    )
+    const tokens = assistantMessageClassTokens(markup)
+
+    expect(tokens).toContain('h-[3lh]')
+    expect(tokens).not.toContain('truncate')
+    expect(tokens).not.toContain('whitespace-nowrap')
   })
 
   it('keeps each row hover boundary inside an anonymous ancestor group', () => {

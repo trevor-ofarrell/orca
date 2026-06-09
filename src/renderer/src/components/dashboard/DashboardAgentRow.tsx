@@ -126,6 +126,9 @@ type Props = {
   sendTargetStatus?: 'eligible' | 'disabled' | 'sending'
   sendTargetDisabledReason?: string
   onSendTargetClick?: (paneKey: string) => void
+  // Why: inline worktree-card rows hide the expand chevron, so the assistant
+  // preview needs a little more room to avoid looking arbitrarily cut off.
+  assistantMessageCollapsedPreviewLines?: 1 | 3
 }
 
 const DashboardAgentRow = React.memo(function DashboardAgentRow({
@@ -145,7 +148,8 @@ const DashboardAgentRow = React.memo(function DashboardAgentRow({
   hideLineageConnectors = false,
   sendTargetStatus,
   sendTargetDisabledReason,
-  onSendTargetClick
+  onSendTargetClick,
+  assistantMessageCollapsedPreviewLines = 1
 }: Props) {
   const hasChildDisclosure =
     typeof childAgentCount === 'number' &&
@@ -539,6 +543,7 @@ const DashboardAgentRow = React.memo(function DashboardAgentRow({
         expanded={expanded}
         isInterrupted={isInterrupted}
         lastAssistantMessage={lastAssistantMessage}
+        collapsedPreviewLines={assistantMessageCollapsedPreviewLines}
       />
     </div>
   )

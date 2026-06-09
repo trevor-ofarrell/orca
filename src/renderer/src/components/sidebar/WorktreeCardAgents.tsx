@@ -325,6 +325,7 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
           // are pinned to a fixed left offset that doesn't match the
           // chevron-shifted column and read as floating fragments.
           hideLineageConnectors
+          assistantMessageCollapsedPreviewLines={3}
         />
         {hasChildAgents && expanded ? (
           <div className="worktree-agent-lineage-children">

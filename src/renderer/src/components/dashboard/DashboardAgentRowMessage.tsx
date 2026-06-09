@@ -5,12 +5,14 @@ type DashboardAgentRowMessageProps = {
   expanded: boolean
   isInterrupted: boolean
   lastAssistantMessage: string
+  collapsedPreviewLines?: 1 | 3
 }
 
 export function DashboardAgentRowMessage({
   expanded,
   isInterrupted,
-  lastAssistantMessage
+  lastAssistantMessage,
+  collapsedPreviewLines = 1
 }: DashboardAgentRowMessageProps): React.JSX.Element | null {
   // Why: message slot is always reserved in collapsed view so the row height
   // stays fixed as assistant text arrives or clears.
@@ -33,13 +35,15 @@ export function DashboardAgentRowMessage({
       {lastAssistantMessage ? (
         <CommentMarkdown
           content={lastAssistantMessage}
+          data-agent-assistant-message-preview={collapsedPreviewLines}
           // Why: animate between a clipped preview and natural height without
           // measuring markdown content in JS.
           className={cn(
             'min-w-0 flex-1 overflow-hidden text-[10px] leading-snug text-muted-foreground/80',
             'transition-[height] duration-200 ease-out [interpolate-size:allow-keywords]',
-            expanded ? 'h-auto' : 'h-[1lh]',
+            expanded ? 'h-auto' : collapsedPreviewLines === 3 ? 'h-[3lh]' : 'h-[1lh]',
             !expanded &&
+              collapsedPreviewLines === 1 &&
               'truncate whitespace-nowrap [&_*]:inline [&_*]:!whitespace-nowrap [&_*]:!m-0 [&_*]:!p-0 [&_ul]:list-none [&_ol]:list-none [&_br]:hidden'
           )}
           title={!expanded ? lastAssistantMessage : undefined}

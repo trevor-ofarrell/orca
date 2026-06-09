@@ -42,10 +42,11 @@ async function seedActivityThread(
   title: string,
   state: 'blocked' | 'done',
   message: string,
-  startedAt: number
+  startedAt: number,
+  agentType: 'codex' | 'claude' = 'codex'
 ): Promise<void> {
   await page.evaluate(
-    ({ thread, title, state, message, startedAt }) => {
+    ({ thread, title, state, message, startedAt, agentType }) => {
       const store = window.__store
       if (!store) {
         throw new Error('window.__store is not available')
@@ -56,14 +57,14 @@ async function seedActivityThread(
         {
           state,
           prompt: thread.prompt,
-          agentType: 'codex',
+          agentType,
           lastAssistantMessage: message
         },
         title,
         { updatedAt: startedAt, stateStartedAt: startedAt }
       )
     },
-    { thread, title, state, message, startedAt }
+    { thread, title, state, message, startedAt, agentType }
   )
 }
 
@@ -154,6 +155,18 @@ async function enableInlineAgentCards(page: Page): Promise<void> {
       state.toggleWorktreeCardProperty('inline-agents')
     }
     state.closeActivityPage()
+  })
+}
+
+async function enableFullInlineAgentCards(page: Page): Promise<void> {
+  await enableInlineAgentCards(page)
+  await page.evaluate(() => {
+    const store = window.__store
+    if (!store) {
+      throw new Error('window.__store is not available')
+    }
+
+    store.getState().setAgentActivityDisplayMode('full')
   })
 }
 
@@ -369,6 +382,67 @@ test.describe('Activity Agent Pane Isolation', () => {
         activeTabId: snapshot.tabId,
         activeLeafId: second.leafId
       })
+  })
+
+  test('workspace card full agent rows wrap long Claude assistant previews', async ({
+    orcaPage
+  }, testInfo) => {
+    await splitActiveTerminalPane(orcaPage, 'vertical')
+    await waitForPaneCount(orcaPage, 2)
+    const snapshot = await waitForPaneIdentitySnapshot(orcaPage, 2)
+    const firstPane = snapshot.panes[0]
+    if (!firstPane) {
+      throw new Error('Long Claude preview test needs a split pane')
+    }
+    const now = Date.now()
+    const thread: SeededActivityThread = {
+      paneKey: `${snapshot.tabId}:${firstPane.leafId}`,
+      leafId: firstPane.leafId,
+      prompt: `CLAUDE_LONG_PREVIEW_${now}`
+    }
+    const message =
+      'Claude finished the first part of the fix and is spelling out the verification details. ' +
+      'The preview should wrap across multiple readable lines inside the workspace card without ' +
+      'forcing the user to open the terminal just to learn what happened.'
+
+    await seedActivityThread(
+      orcaPage,
+      thread,
+      'Claude long preview pane',
+      'done',
+      message,
+      now - 1_000,
+      'claude'
+    )
+    await enableFullInlineAgentCards(orcaPage)
+
+    await expect(orcaPage.getByText(thread.prompt)).toBeVisible({ timeout: 10_000 })
+    const preview = orcaPage
+      .locator('[data-agent-assistant-message-preview="3"]')
+      .filter({ hasText: 'Claude finished the first part' })
+      .first()
+    await expect(preview).toBeVisible({ timeout: 10_000 })
+
+    const metrics = await preview.evaluate((element) => {
+      const style = window.getComputedStyle(element)
+      const lineHeight = Number.parseFloat(style.lineHeight)
+      const rect = element.getBoundingClientRect()
+      return {
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        height: rect.height,
+        lineHeight
+      }
+    })
+
+    expect(metrics.height).toBeGreaterThan(metrics.lineHeight * 2.5)
+    expect(metrics.height).toBeLessThan(metrics.lineHeight * 3.5)
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
+
+    await testInfo.attach('long-claude-worktree-card-preview', {
+      body: await preview.screenshot(),
+      contentType: 'image/png'
+    })
   })
 
   test('workspace card agent rows focus the matching split-group terminal pane', async ({
