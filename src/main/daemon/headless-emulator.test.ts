@@ -48,6 +48,49 @@ describe('HeadlessEmulator', () => {
       const snapshot = emulator.getSnapshot()
       expect(snapshot.snapshotAnsi).toContain('red text')
     })
+
+    it('serializes split synchronized rich TUI frames for model-backed replay', async () => {
+      emulator = new HeadlessEmulator({ cols: 80, rows: 12 })
+      const richFrame = [
+        '\x1b[?2026h',
+        '\x1b[?1049h',
+        '\x1b[2J\x1b[H',
+        '\x1b[?25l',
+        '\x1b[2;36m╭────────────────────────────╮\x1b[0m\r\n',
+        '\x1b[2;36m│ Codex rich restore 🟢 ███░ │\x1b[0m\r\n',
+        '\x1b[2;36m│ status streaming           │\x1b[0m\r\n',
+        '\x1b[2;36m╰────────────────────────────╯\x1b[0m',
+        '\x1b[6;4H\x1b[?25h',
+        '\x1b[?2026l'
+      ].join('')
+
+      // Why: hidden rich TUI bytes may arrive split across DEC 2026 frame
+      // boundaries; model/view work needs the headless model to preserve the
+      // final visible state before renderer writes can be removed.
+      await emulator.write(richFrame.slice(0, 17))
+      await emulator.write(richFrame.slice(17, 91))
+      await emulator.write(richFrame.slice(91))
+
+      const snapshot = emulator.getSnapshot()
+      expect(snapshot.modes.alternateScreen).toBe(true)
+      expect(snapshot.snapshotAnsi).toContain('Codex rich restore')
+      expect(snapshot.snapshotAnsi).toContain('🟢')
+      expect(snapshot.snapshotAnsi).toContain('███░')
+      expect(snapshot.snapshotAnsi).toContain('╭')
+      expect(snapshot.snapshotAnsi).not.toContain('\x1b[?2026h')
+
+      const replay = new HeadlessEmulator({ cols: snapshot.cols, rows: snapshot.rows })
+      try {
+        await replay.write(snapshot.rehydrateSequences + snapshot.snapshotAnsi)
+        const replayed = replay.getSnapshot()
+        expect(replayed.modes.alternateScreen).toBe(true)
+        expect(replayed.snapshotAnsi).toContain('Codex rich restore')
+        expect(replayed.snapshotAnsi).toContain('🟢')
+        expect(replayed.snapshotAnsi).toContain('███░')
+      } finally {
+        replay.dispose()
+      }
+    })
   })
 
   describe('OSC-7 CWD tracking', () => {
