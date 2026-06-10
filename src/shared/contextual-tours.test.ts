@@ -168,11 +168,11 @@ describe('contextual tour definitions', () => {
       | undefined
 
     expect(tour?.steps.map((step) => step.title)).toEqual([
-      'Your portable command center',
+      'Run an agent across your repos',
       'Park side work here'
     ])
     expect(tour?.steps.map((step) => step.body)).toEqual([
-      'Set up your go-to tools once and they’re at hand in every worktree — no recreating them each time you switch tasks.',
+      'Point this at the folder holding your services to run an agent across all of them — something a single-repo worktree can’t do.',
       'Open agents, scratch terminals, notes, and browser tabs without cluttering the worktree you’re focused on.'
     ])
     expect(tour?.steps[0]).toMatchObject({

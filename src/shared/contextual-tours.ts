@@ -168,8 +168,8 @@ export const CONTEXTUAL_TOURS = [
     id: 'floating-workspace',
     steps: [
       {
-        title: 'Your portable command center',
-        body: 'Set up your go-to tools once and they’re at hand in every worktree — no recreating them each time you switch tasks.',
+        title: 'Run an agent across your repos',
+        body: 'Point this at the folder holding your services to run an agent across all of them — something a single-repo worktree can’t do.',
         targetSelector:
           '[data-contextual-tour-target="floating-workspace-actions"], [data-contextual-tour-target="floating-workspace-surface"]',
         requiredForStart: true,
