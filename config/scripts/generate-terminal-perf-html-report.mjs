@@ -27,18 +27,34 @@ const SCENARIO_LABELS = [
   ['opencode-revisit-pressure', 'Revisit under pressure']
 ]
 
-const COMPARISON_METRICS = [
-  { key: 'medianMs', label: 'Median typing', suffix: 'ms', lowerIsBetter: true },
-  { key: 'worstMs', label: 'Worst typing', suffix: 'ms', lowerIsBetter: true },
-  { key: 'maxTimerDriftMs', label: 'Timer drift', suffix: 'ms', lowerIsBetter: true },
-  { key: 'scrollMs', label: 'Scroll', suffix: 'ms', lowerIsBetter: true },
-  { key: 'restoreMs', label: 'Restore', suffix: 'ms', lowerIsBetter: true },
-  { key: 'revisitMs', label: 'Revisit', suffix: 'ms', lowerIsBetter: true },
-  { key: 'rendererPeakQueuedChars', label: 'Renderer peak chars', lowerIsBetter: true },
-  { key: 'mainPeakInFlightChars', label: 'Main in-flight chars', lowerIsBetter: true },
-  { key: 'mainPeakPendingChars', label: 'Main pending chars', lowerIsBetter: true },
-  { key: 'rendererDroppedBacklogs', label: 'Renderer drops', lowerIsBetter: true }
+// Why: every tracked metric is lower-is-better, so delta coloring and the
+// regression table share one direction rule.
+const MS_METRICS = [
+  { key: 'medianMs', label: 'Typing median', chart: true },
+  { key: 'worstMs', label: 'Typing worst', chart: true },
+  { key: 'scrollMs', label: 'Active scroll', chart: true },
+  { key: 'restoreMs', label: 'Restore', chart: true },
+  { key: 'revisitMs', label: 'Revisit marker', chart: true },
+  { key: 'maxTimerDriftMs', label: 'Timer drift', chart: false }
 ]
+
+const COUNT_METRICS = [
+  { key: 'rendererPeakQueuedChars', label: 'Renderer peak queued chars' },
+  { key: 'mainPeakInFlightChars', label: 'Main in-flight chars' },
+  { key: 'mainPeakPendingChars', label: 'Main pending chars' },
+  { key: 'hiddenSkippedChars', label: 'Hidden skipped chars' },
+  { key: 'rendererDroppedBacklogs', label: 'Renderer dropped backlogs' }
+]
+
+const SERIES_COLORS = {
+  medianMs: '#2563eb',
+  worstMs: '#dc2626',
+  scrollMs: '#d97706',
+  restoreMs: '#7c3aed',
+  revisitMs: '#0d9488'
+}
+
+const LABELED_INPUT_RE = /^([\w .#@+-]+)=(.+)$/
 
 export function parseHtmlReportArgs(argv, env = process.env) {
   const args = [...argv]
@@ -46,7 +62,7 @@ export function parseHtmlReportArgs(argv, env = process.env) {
     args.shift()
   }
 
-  const inputPaths = []
+  const inputs = []
   let outputPath = env.ORCA_E2E_TERMINAL_PERF_HTML_REPORT_PATH || DEFAULT_OUTPUT_PATH
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
@@ -63,15 +79,20 @@ export function parseHtmlReportArgs(argv, env = process.env) {
       outputPath = arg.slice('--output='.length)
       continue
     }
-    inputPaths.push(arg)
+    const labeled = arg.match(LABELED_INPUT_RE)
+    if (labeled) {
+      inputs.push({ label: labeled[1], path: labeled[2] })
+    } else {
+      inputs.push({ label: basename(arg).replace(/\.json$/i, ''), path: arg })
+    }
   }
 
-  if (inputPaths.length === 0) {
+  if (inputs.length === 0) {
     throw new Error(
-      'Usage: node config/scripts/generate-terminal-perf-html-report.mjs <playwright-json>... --output <report.html>'
+      'Usage: node config/scripts/generate-terminal-perf-html-report.mjs [label=]<playwright-json>... --output <report.html>'
     )
   }
-  return { inputPaths, outputPath }
+  return { inputs, outputPath }
 }
 
 function readJsonReport(path) {
@@ -139,31 +160,20 @@ function parseCount(value) {
 }
 
 function normalizeRow(row) {
-  const panes = parseCount(row.panes)
-  const frames = parseCount(row.frames)
-  const medianMs = parseMs(row.median)
-  const worstMs = parseMs(row.worst)
-  const revisitMs = parseMs(row.revisit)
-  const maxTimerDriftMs = parseMs(row.maxTimerDrift)
-  const scrollMs = parseMs(row.scroll)
-  const restoreMs = parseMs(row.restore)
-  const rendererQueuedChars = parseCount(row.rendererQueuedChars)
-  const rendererPeakQueuedChars = parseCount(row.rendererPeakQueuedChars)
-  const rendererDroppedBacklogs = parseCount(row.rendererDroppedBacklogs)
   return {
     ...row,
     group: scenarioGroup(row.scenario),
-    panes,
-    frames,
-    medianMs,
-    worstMs,
-    revisitMs,
-    maxTimerDriftMs,
-    scrollMs,
-    restoreMs,
-    rendererQueuedChars,
-    rendererPeakQueuedChars,
-    rendererDroppedBacklogs,
+    panes: parseCount(row.panes),
+    frames: parseCount(row.frames),
+    medianMs: parseMs(row.median),
+    worstMs: parseMs(row.worst),
+    revisitMs: parseMs(row.revisit),
+    maxTimerDriftMs: parseMs(row.maxTimerDrift),
+    scrollMs: parseMs(row.scroll),
+    restoreMs: parseMs(row.restore),
+    rendererQueuedChars: parseCount(row.rendererQueuedChars),
+    rendererPeakQueuedChars: parseCount(row.rendererPeakQueuedChars),
+    rendererDroppedBacklogs: parseCount(row.rendererDroppedBacklogs),
     mainPeakPendingChars: parseCount(row.mainPeakPendingChars),
     mainPeakInFlightChars: parseCount(row.mainPeakInFlightChars),
     heldAckChars: parseCount(row.heldAckChars),
@@ -180,6 +190,36 @@ function scenarioGroup(scenario) {
   return 'Other terminal scenarios'
 }
 
+function scenarioSortKey(scenario) {
+  const prefixIndex = SCENARIO_LABELS.findIndex(([prefix]) => scenario.startsWith(prefix))
+  const paneMatch = scenario.match(/-(\d+)$/)
+  return [
+    prefixIndex === -1 ? SCENARIO_LABELS.length : prefixIndex,
+    paneMatch ? Number(paneMatch[1]) : 0,
+    scenario
+  ]
+}
+
+function compareScenarios(a, b) {
+  const ka = scenarioSortKey(a)
+  const kb = scenarioSortKey(b)
+  if (ka[0] !== kb[0]) {
+    return ka[0] - kb[0]
+  }
+  if (ka[1] !== kb[1]) {
+    return ka[1] - kb[1]
+  }
+  return ka[2] < kb[2] ? -1 : ka[2] > kb[2] ? 1 : 0
+}
+
+function scenarioTitle(scenario, row) {
+  const group = scenarioGroup(scenario)
+  if (row?.panes != null) {
+    return `${group} — ${row.panes} panes`
+  }
+  return group
+}
+
 function budgetFailures(row) {
   const failures = []
   for (const [key, budget] of Object.entries(BUDGETS)) {
@@ -188,445 +228,429 @@ function budgetFailures(row) {
       continue
     }
     if (value > budget) {
-      failures.push(
-        `${labelForMetric(key)} ${formatMetricValue(key, value)} > ${formatMetricValue(key, budget)}`
-      )
+      failures.push(`${key} ${value} > ${budget}`)
     }
   }
   return failures
 }
 
-function labelForMetric(key) {
-  return (
-    {
-      medianMs: 'Median typing',
-      worstMs: 'Worst typing',
-      revisitMs: 'Revisit',
-      maxTimerDriftMs: 'Timer drift',
-      scrollMs: 'Scroll',
-      restoreMs: 'Restore',
-      rendererQueuedChars: 'Renderer queued',
-      rendererPeakQueuedChars: 'Renderer peak queued',
-      rendererDroppedBacklogs: 'Renderer dropped backlogs'
-    }[key] ?? key
-  )
-}
-
-function formatMetricValue(key, value) {
+function formatMs(value) {
   if (value == null) {
-    return ''
+    return '—'
   }
-  if (key.endsWith('Ms')) {
-    return `${value.toFixed(1)}ms`
-  }
-  return Number.isInteger(value) ? String(value) : value.toFixed(1)
+  return `${value.toFixed(1)}ms`
 }
 
-function formatCell(value, suffix = '') {
-  if (value == null || value === '') {
-    return ''
+function formatLargeValue(value) {
+  if (value == null) {
+    return '—'
   }
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? `${value}${suffix}` : `${value.toFixed(1)}${suffix}`
+  if (value >= 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(2)}M`
+  }
+  if (value >= 1024) {
+    return `${Math.round(value / 1024)}k`
   }
   return String(value)
 }
 
 function escapeHtml(value) {
-  return String(value ?? '')
+  return String(value)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
 }
 
-function groupRows(rows) {
-  const groups = new Map()
-  for (const row of rows) {
-    const existing = groups.get(row.group) ?? []
-    existing.push(row)
-    groups.set(row.group, existing)
-  }
-  return [...groups.entries()].map(([label, group]) => [
-    label,
-    group.sort((a, b) => (a.panes ?? 0) - (b.panes ?? 0) || a.scenario.localeCompare(b.scenario))
-  ])
-}
+// ── Trend data ────────────────────────────────────────────────────────────
 
-function sourceOrder(rows) {
-  return [...new Set(rows.map((row) => row.source))]
-}
-
-function comparisonKey(row) {
-  return [row.scenario, row.panes ?? '', row.frames ?? ''].join('|')
-}
-
-function comparisonLabel(row) {
-  const details = []
-  if (row.panes != null) {
-    details.push(`${row.panes} panes`)
-  }
-  if (row.frames != null) {
-    details.push(`${row.frames} frames`)
-  }
-  return `${row.scenario}${details.length > 0 ? ` (${details.join(', ')})` : ''}`
-}
-
-function collectPairComparisons(rows, fromSource, toSource) {
-  const bySourceAndKey = new Map()
-  for (const row of rows) {
-    bySourceAndKey.set(`${row.source}\0${comparisonKey(row)}`, row)
-  }
-  const comparisons = []
-  for (const row of rows) {
-    if (row.source !== toSource) {
-      continue
-    }
-    const before = bySourceAndKey.get(`${fromSource}\0${comparisonKey(row)}`)
-    if (!before) {
-      continue
-    }
-    for (const metric of COMPARISON_METRICS) {
-      const beforeValue = before[metric.key]
-      const afterValue = row[metric.key]
-      if (beforeValue == null || afterValue == null) {
-        continue
+function buildMatrix(revisions) {
+  const scenarios = new Map()
+  for (const revision of revisions) {
+    for (const row of revision.rows) {
+      if (!scenarios.has(row.scenario)) {
+        scenarios.set(row.scenario, new Map())
       }
-      const delta = afterValue - beforeValue
-      const percent = beforeValue === 0 ? null : (delta / beforeValue) * 100
-      const improved = metric.lowerIsBetter ? delta < 0 : delta > 0
-      const regressed = metric.lowerIsBetter ? delta > 0 : delta < 0
-      comparisons.push({
-        before,
-        after: row,
-        metric,
-        beforeValue,
-        afterValue,
-        delta,
-        percent,
-        improved,
-        regressed
-      })
+      scenarios.get(row.scenario).set(revision.label, row)
     }
   }
-  return comparisons.sort(
-    (a, b) =>
-      comparisonLabel(a.after).localeCompare(comparisonLabel(b.after)) ||
-      a.metric.label.localeCompare(b.metric.label)
-  )
+  const orderedScenarios = [...scenarios.keys()].sort(compareScenarios)
+  return { scenarios, orderedScenarios }
 }
 
-function renderDelta(value, metric) {
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${formatMetricValue(metric.key, value)}`
-}
-
-function renderPercent(value) {
-  if (value == null || !Number.isFinite(value)) {
-    return ''
+function niceCeil(value) {
+  if (value <= 0) {
+    return 1
   }
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${value.toFixed(1)}%`
-}
-
-function renderComparisonSummary(rows) {
-  const sources = sourceOrder(rows)
-  if (sources.length < 2) {
-    return ''
-  }
-  const first = sources[0]
-  const last = sources.at(-1)
-  const finalComparisons = collectPairComparisons(rows, first, last)
-  const changed = finalComparisons.filter((comparison) => comparison.delta !== 0)
-  const improved = changed.filter((comparison) => comparison.improved).length
-  const regressed = changed.filter((comparison) => comparison.regressed).length
-  const unchanged = finalComparisons.length - changed.length
-  const worstRegressions = finalComparisons
-    .filter((comparison) => comparison.regressed)
-    .sort((a, b) => Math.abs(b.percent ?? b.delta) - Math.abs(a.percent ?? a.delta))
-    .slice(0, 6)
-  return `<section>
-    <h2>Baseline To Final Impact</h2>
-    <p class="summary">Comparing <strong>${escapeHtml(first)}</strong> to <strong>${escapeHtml(last)}</strong> across matching scenario rows. Lower is better for all metrics in this section.</p>
-    <div class="cards">
-      <div class="card"><span>Compared metrics</span><strong>${finalComparisons.length}</strong></div>
-      <div class="card"><span>Improved</span><strong class="ok">${improved}</strong></div>
-      <div class="card"><span>Regressed</span><strong class="${regressed === 0 ? 'ok' : 'bad'}">${regressed}</strong></div>
-      <div class="card"><span>Unchanged</span><strong>${unchanged}</strong></div>
-    </div>
-    ${
-      worstRegressions.length === 0
-        ? '<p class="summary">No regressions found among matching baseline/final metrics.</p>'
-        : `<h3>Largest Regressions</h3>${renderComparisonTable(worstRegressions)}`
+  const magnitude = 10 ** Math.floor(Math.log10(value))
+  for (const step of [1, 2, 2.5, 5, 10]) {
+    if (value <= step * magnitude) {
+      return step * magnitude
     }
-    <h3>All Baseline To Final Deltas</h3>
-    ${renderComparisonTable(finalComparisons)}
-  </section>`
+  }
+  return 10 * magnitude
 }
 
-function renderIncrementalComparisons(rows) {
-  const sources = sourceOrder(rows)
-  if (sources.length < 3) {
-    return ''
-  }
-  const sections = []
-  for (let index = 1; index < sources.length; index += 1) {
-    const comparisons = collectPairComparisons(rows, sources[index - 1], sources[index])
-    const changed = comparisons.filter((comparison) => comparison.delta !== 0)
-    const improved = changed.filter((comparison) => comparison.improved).length
-    const regressed = changed.filter((comparison) => comparison.regressed).length
-    sections.push(`<details>
-      <summary>${escapeHtml(sources[index - 1])} → ${escapeHtml(sources[index])}: ${improved} improved, ${regressed} regressed</summary>
-      ${renderComparisonTable(comparisons)}
-    </details>`)
-  }
-  return `<section>
-    <h2>Incremental Stack Deltas</h2>
-    <p class="summary">Adjacent report comparisons show how each measured slice changed from the previous report.</p>
-    ${sections.join('')}
-  </section>`
-}
+// ── Rendering ─────────────────────────────────────────────────────────────
 
-function renderComparisonTable(comparisons) {
-  if (comparisons.length === 0) {
-    return '<p class="summary">No matching comparable metrics found.</p>'
-  }
-  const rows = comparisons
-    .map((comparison) => {
-      const direction = comparison.improved ? 'improved' : comparison.regressed ? 'regressed' : ''
-      return `<tr class="${direction}">
-        <td>${escapeHtml(comparisonLabel(comparison.after))}</td>
-        <td>${escapeHtml(comparison.metric.label)}</td>
-        <td>${escapeHtml(formatMetricValue(comparison.metric.key, comparison.beforeValue))}</td>
-        <td>${escapeHtml(formatMetricValue(comparison.metric.key, comparison.afterValue))}</td>
-        <td>${escapeHtml(renderDelta(comparison.delta, comparison.metric))}</td>
-        <td>${escapeHtml(renderPercent(comparison.percent))}</td>
-      </tr>`
-    })
-    .join('')
-  return `<table class="comparison"><thead><tr><th>Scenario</th><th>Metric</th><th>Before</th><th>After</th><th>Delta</th><th>Percent</th></tr></thead><tbody>${rows}</tbody></table>`
-}
-
-function chartSvg(title, rows, metrics) {
-  const plotRows = rows.filter(
-    (row) => row.panes != null && metrics.some((metric) => row[metric.key] != null)
+function renderTrendChart({ scenario, byRevision, revisions, title }) {
+  const metrics = MS_METRICS.filter(
+    (metric) =>
+      metric.chart &&
+      revisions.some((revision) => byRevision.get(revision.label)?.[metric.key] != null)
   )
-  if (plotRows.length === 0) {
+  if (metrics.length === 0) {
     return ''
   }
-  const width = 720
-  const height = 260
-  const pad = { bottom: 42, left: 54, right: 20, top: 28 }
-  const minPane = Math.min(...plotRows.map((row) => row.panes))
-  const maxPane = Math.max(...plotRows.map((row) => row.panes))
+  const width = 560
+  const height = 230
+  const pad = { left: 52, right: 14, top: 30, bottom: 38 }
+  const plotW = width - pad.left - pad.right
+  const plotH = height - pad.top - pad.bottom
   const maxValue = Math.max(
     1,
-    ...plotRows.flatMap((row) => metrics.map((metric) => row[metric.key] ?? 0))
+    ...metrics.flatMap((metric) =>
+      revisions.map((revision) => byRevision.get(revision.label)?.[metric.key] ?? 0)
+    )
   )
-  const x = (pane) => {
-    if (minPane === maxPane) {
-      return pad.left + (width - pad.left - pad.right) / 2
-    }
-    return pad.left + ((pane - minPane) / (maxPane - minPane)) * (width - pad.left - pad.right)
+  const yMax = niceCeil(maxValue * 1.15)
+  const xFor = (index) =>
+    pad.left + (revisions.length === 1 ? plotW / 2 : (plotW * index) / (revisions.length - 1))
+  const yFor = (value) => pad.top + plotH - (plotH * value) / yMax
+
+  const parts = []
+  parts.push(
+    `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(title)}" class="trend-chart">`
+  )
+  parts.push(`<text x="${pad.left}" y="16" class="chart-title">${escapeHtml(title)}</text>`)
+  // Horizontal gridlines + y labels
+  const ticks = 4
+  for (let tick = 0; tick <= ticks; tick += 1) {
+    const value = (yMax * tick) / ticks
+    const y = yFor(value)
+    parts.push(
+      `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" class="gridline"/>`
+    )
+    parts.push(
+      `<text x="${pad.left - 6}" y="${y + 3}" class="axis-label" text-anchor="end">${value % 1 === 0 ? value : value.toFixed(1)}</text>`
+    )
   }
-  const y = (value) => height - pad.bottom - (value / maxValue) * (height - pad.top - pad.bottom)
-  const axis = [
-    `<line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" />`,
-    `<line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}" />`
-  ].join('')
-  const series = metrics
+  // X labels
+  revisions.forEach((revision, index) => {
+    parts.push(
+      `<text x="${xFor(index)}" y="${height - pad.bottom + 16}" class="axis-label" text-anchor="middle">${escapeHtml(revision.label)}</text>`
+    )
+  })
+  // Series
+  for (const metric of metrics) {
+    const color = SERIES_COLORS[metric.key] ?? '#475569'
+    const points = revisions
+      .map((revision, index) => ({ index, value: byRevision.get(revision.label)?.[metric.key] }))
+      .filter((point) => point.value != null)
+    if (points.length === 0) {
+      continue
+    }
+    const path = points
+      .map(
+        (point, order) =>
+          `${order === 0 ? 'M' : 'L'}${xFor(point.index).toFixed(1)},${yFor(point.value).toFixed(1)}`
+      )
+      .join(' ')
+    parts.push(`<path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>`)
+    for (const point of points) {
+      const x = xFor(point.index)
+      const y = yFor(point.value)
+      parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${color}"/>`)
+      parts.push(
+        `<text x="${x.toFixed(1)}" y="${(y - 7).toFixed(1)}" class="point-label" text-anchor="middle" fill="${color}">${point.value % 1 === 0 ? point.value : point.value.toFixed(1)}</text>`
+      )
+    }
+  }
+  parts.push('</svg>')
+
+  const legend = metrics
     .map((metric) => {
-      const points = plotRows
-        .filter((row) => row[metric.key] != null)
-        .map((row) => `${x(row.panes).toFixed(1)},${y(row[metric.key]).toFixed(1)}`)
-        .join(' ')
-      if (!points) {
-        return ''
-      }
-      return `<polyline class="series ${metric.className}" points="${points}" /><g>${plotRows
-        .filter((row) => row[metric.key] != null)
+      const color = SERIES_COLORS[metric.key] ?? '#475569'
+      return `<span class="legend-item"><span class="legend-swatch" style="background:${color}"></span>${escapeHtml(metric.label)}</span>`
+    })
+    .join('')
+  return `<figure class="chart-card" data-scenario="${escapeHtml(scenario)}">${parts.join('')}<figcaption class="legend">${legend} <span class="legend-unit">ms — lower is better</span></figcaption></figure>`
+}
+
+function deltaCell(baseline, latest, { lowerIsBetter = true, zeroBudget = false } = {}) {
+  if (baseline == null || latest == null) {
+    return '<td class="delta">—</td>'
+  }
+  const diff = latest - baseline
+  const pct = baseline === 0 ? null : (diff / baseline) * 100
+  let cls = 'neutral'
+  if (zeroBudget) {
+    cls = latest > 0 ? 'worse' : 'better'
+  } else if (pct != null && Math.abs(pct) >= 5) {
+    cls = diff < 0 === lowerIsBetter ? 'better' : 'worse'
+  } else if (baseline === 0 && diff !== 0) {
+    cls = diff < 0 === lowerIsBetter ? 'better' : 'worse'
+  }
+  const pctLabel =
+    pct == null ? (diff === 0 ? '±0%' : 'new') : `${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%`
+  const diffLabel = `${diff >= 0 ? '+' : ''}${Math.abs(diff) >= 100 ? Math.round(diff) : diff.toFixed(1)}`
+  return `<td class="delta ${cls}">${escapeHtml(pctLabel)} <span class="delta-abs">(${escapeHtml(diffLabel)})</span></td>`
+}
+
+function renderScenarioTable({ scenario, byRevision, revisions, title }) {
+  const metricRows = []
+  const allMetrics = [...MS_METRICS, ...COUNT_METRICS]
+  for (const metric of allMetrics) {
+    const values = revisions.map((revision) => byRevision.get(revision.label)?.[metric.key])
+    if (values.every((value) => value == null)) {
+      continue
+    }
+    const isMs = MS_METRICS.includes(metric)
+    const format = isMs ? formatMs : formatLargeValue
+    const cells = values
+      .map((value) => `<td>${value == null ? '—' : escapeHtml(format(value))}</td>`)
+      .join('')
+    const baseline = values.find((value) => value != null)
+    const latest = [...values].reverse().find((value) => value != null)
+    metricRows.push(
+      `<tr><th scope="row">${escapeHtml(metric.label)}</th>${cells}${deltaCell(baseline, latest, {
+        zeroBudget: metric.key === 'rendererDroppedBacklogs'
+      })}</tr>`
+    )
+  }
+  if (metricRows.length === 0) {
+    return ''
+  }
+  const headers = revisions.map((revision) => `<th>${escapeHtml(revision.label)}</th>`).join('')
+  return `<section class="scenario-block">
+<h3>${escapeHtml(title)} <span class="scenario-id">${escapeHtml(scenario)}</span></h3>
+<table class="trend-table">
+<thead><tr><th>Metric</th>${headers}<th>Δ first → last</th></tr></thead>
+<tbody>${metricRows.join('')}</tbody>
+</table>
+</section>`
+}
+
+function renderHeadline(revisions, matrix) {
+  if (revisions.length < 2) {
+    return ''
+  }
+  const first = revisions[0]
+  const last = revisions.at(-1)
+  const cards = []
+  for (const scenario of matrix.orderedScenarios) {
+    const byRevision = matrix.scenarios.get(scenario)
+    const baseRow = byRevision.get(first.label)
+    const lastRow = byRevision.get(last.label)
+    if (!baseRow || !lastRow || baseRow.medianMs == null || lastRow.medianMs == null) {
+      continue
+    }
+    const diff = lastRow.medianMs - baseRow.medianMs
+    const pct = baseRow.medianMs === 0 ? 0 : (diff / baseRow.medianMs) * 100
+    const cls = Math.abs(pct) < 5 ? 'neutral' : diff < 0 ? 'better' : 'worse'
+    cards.push(`<div class="card ${cls}">
+<div class="card-title">${escapeHtml(scenarioTitle(scenario, lastRow))}</div>
+<div class="card-value">${escapeHtml(formatMs(baseRow.medianMs))} → ${escapeHtml(formatMs(lastRow.medianMs))}</div>
+<div class="card-sub">typing median, ${escapeHtml(first.label)} → ${escapeHtml(last.label)} (${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%)</div>
+</div>`)
+  }
+  if (cards.length === 0) {
+    return ''
+  }
+  return `<section><h2>Baseline vs latest</h2><div class="cards">${cards.join('')}</div></section>`
+}
+
+function renderBudgets(latestRevision) {
+  const failures = []
+  for (const row of latestRevision.rows) {
+    for (const failure of budgetFailures(row)) {
+      failures.push(`${row.scenario}: ${failure}`)
+    }
+  }
+  const status =
+    failures.length === 0 ? '<span class="pass">Pass</span>' : '<span class="fail">Fail</span>'
+  const failureList =
+    failures.length === 0
+      ? ''
+      : `<ul>${failures.map((failure) => `<li>${escapeHtml(failure)}</li>`).join('')}</ul>`
+  return `<section><h2>Budget status — ${escapeHtml(latestRevision.label)}</h2>
+<p>${latestRevision.rows.length} scenario rows checked: ${status}</p>${failureList}</section>`
+}
+
+function renderInputsMeta(revisions) {
+  const items = revisions
+    .map((revision) => {
+      const stats = revision.stats
+      const statsLabel = stats
+        ? ` — ${stats.expected ?? 0} passed, ${stats.unexpected ?? 0} failed, ${stats.flaky ?? 0} flaky`
+        : ''
+      const failNote =
+        stats && stats.unexpected > 0
+          ? ' <span class="meta-warn">(failed assertions at this revision; metrics still recorded)</span>'
+          : ''
+      return `<li><strong>${escapeHtml(revision.label)}</strong> — ${revision.rows.length} scenario rows (${escapeHtml(revision.path)})${escapeHtml(statsLabel)}${failNote}</li>`
+    })
+    .join('')
+  return `<ol class="inputs">${items}</ol>`
+}
+
+function renderRawDetails(revisions) {
+  return revisions
+    .map((revision) => {
+      const rows = revision.rows
         .map(
           (row) =>
-            `<circle class="point ${metric.className}" cx="${x(row.panes).toFixed(1)}" cy="${y(row[metric.key]).toFixed(1)}" r="3"><title>${escapeHtml(row.scenario)} ${metric.label}: ${escapeHtml(formatCell(row[metric.key], metric.suffix ?? ''))}</title></circle>`
+            `<tr><td>${escapeHtml(row.scenario)}</td><td>${row.panes ?? '—'}</td><td>${escapeHtml(formatMs(row.medianMs))}</td><td>${escapeHtml(formatMs(row.worstMs))}</td><td>${escapeHtml(formatMs(row.scrollMs))}</td><td>${escapeHtml(formatMs(row.restoreMs))}</td><td>${escapeHtml(formatMs(row.revisitMs))}</td><td>${escapeHtml(formatLargeValue(row.rendererPeakQueuedChars))}</td><td>${escapeHtml(formatLargeValue(row.hiddenSkippedChars))}</td><td>${row.rendererDroppedBacklogs ?? '—'}</td></tr>`
         )
-        .join('')}</g>`
+        .join('')
+      return `<details><summary>Raw rows — ${escapeHtml(revision.label)}</summary>
+<table class="trend-table">
+<thead><tr><th>Scenario</th><th>Panes</th><th>Median</th><th>Worst</th><th>Scroll</th><th>Restore</th><th>Revisit</th><th>Renderer peak</th><th>Hidden skipped</th><th>Drops</th></tr></thead>
+<tbody>${rows}</tbody></table></details>`
     })
     .join('')
-  const xLabels = [...new Set(plotRows.map((row) => row.panes))]
-    .sort((a, b) => a - b)
-    .map(
-      (pane) =>
-        `<text class="axis-label" x="${x(pane).toFixed(1)}" y="${height - 12}" text-anchor="middle">${pane}</text>`
-    )
-    .join('')
-  const yLabels = [0, maxValue / 2, maxValue]
-    .map(
-      (value) =>
-        `<text class="axis-label" x="${pad.left - 8}" y="${y(value).toFixed(1)}" text-anchor="end">${formatLargeValue(value)}</text>`
-    )
-    .join('')
-  const legend = metrics
-    .map((metric) => `<span><i class="${metric.className}"></i>${escapeHtml(metric.label)}</span>`)
-    .join('')
-  return `<section class="chart"><div class="chart-title">${escapeHtml(title)}</div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(title)}">${axis}${series}${xLabels}${yLabels}<text class="axis-title" x="${width / 2}" y="${height - 2}" text-anchor="middle">Pane count</text></svg><div class="legend">${legend}</div></section>`
 }
 
-function formatLargeValue(value) {
-  if (value >= 1024 * 1024) {
-    return `${(value / (1024 * 1024)).toFixed(1)}M`
-  }
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(0)}k`
-  }
-  return value.toFixed(value % 1 === 0 ? 0 : 1)
-}
+const PAGE_CSS = `
+:root { color-scheme: light; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 24px auto; max-width: 1240px; padding: 0 16px; color: #0f172a; background: #f8fafc; }
+h1 { font-size: 24px; margin-bottom: 4px; }
+h2 { font-size: 18px; margin: 28px 0 10px; }
+h3 { font-size: 15px; margin: 18px 0 6px; }
+.meta { color: #64748b; font-size: 13px; }
+.inputs { font-size: 13px; color: #334155; padding-left: 20px; }
+.meta-warn { color: #b45309; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.card { background: #fff; border: 1px solid #e2e8f0; border-left-width: 4px; border-radius: 8px; padding: 10px 12px; }
+.card.better { border-left-color: #16a34a; }
+.card.worse { border-left-color: #dc2626; }
+.card.neutral { border-left-color: #94a3b8; }
+.card-title { font-size: 12px; color: #64748b; }
+.card-value { font-size: 18px; font-weight: 600; margin: 2px 0; }
+.card-sub { font-size: 11px; color: #94a3b8; }
+.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); gap: 14px; }
+.chart-card { margin: 0; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; }
+.trend-chart { width: 100%; height: auto; }
+.chart-title { font-size: 13px; font-weight: 600; fill: #0f172a; }
+.gridline { stroke: #e2e8f0; stroke-width: 1; }
+.axis-label { font-size: 10px; fill: #64748b; }
+.point-label { font-size: 10px; font-weight: 600; }
+.legend { font-size: 11px; color: #475569; margin-top: 2px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.legend-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.legend-unit { color: #94a3b8; margin-left: auto; }
+.scenario-block { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+.scenario-id { font-size: 11px; color: #94a3b8; font-weight: 400; margin-left: 6px; }
+table.trend-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+table.trend-table th, table.trend-table td { border-bottom: 1px solid #e2e8f0; padding: 5px 8px; text-align: right; white-space: nowrap; }
+table.trend-table th:first-child, table.trend-table td:first-child { text-align: left; }
+table.trend-table thead th { color: #475569; font-weight: 600; background: #f1f5f9; }
+td.delta.better { color: #15803d; font-weight: 600; }
+td.delta.worse { color: #b91c1c; font-weight: 600; }
+td.delta.neutral { color: #64748b; }
+.delta-abs { font-weight: 400; color: #94a3b8; }
+.pass { color: #15803d; font-weight: 700; }
+.fail { color: #b91c1c; font-weight: 700; }
+details { margin: 8px 0; }
+summary { cursor: pointer; font-size: 13px; color: #334155; }
+`
 
-function renderTable(rows) {
-  const columns = [
-    ['Scenario', (row) => row.scenario],
-    ['Source', (row) => row.source],
-    ['Panes', (row) => row.panes],
-    ['Frames', (row) => row.frames],
-    ['Median', (row) => formatCell(row.medianMs, 'ms')],
-    ['Worst', (row) => formatCell(row.worstMs, 'ms')],
-    ['Revisit', (row) => formatCell(row.revisitMs, 'ms')],
-    ['Scroll', (row) => formatCell(row.scrollMs, 'ms')],
-    ['Restore', (row) => formatCell(row.restoreMs, 'ms')],
-    ['Drift', (row) => formatCell(row.maxTimerDriftMs, 'ms')],
-    ['Renderer Peak', (row) => row.rendererPeakQueuedChars],
-    ['Main In-Flight', (row) => row.mainPeakInFlightChars],
-    ['Held ACK', (row) => row.heldAckChars],
-    ['Hidden Chars', (row) => row.hiddenSkippedChars],
-    ['Drops', (row) => row.rendererDroppedBacklogs],
-    [
-      'Budget',
-      (row) => {
-        const failures = budgetFailures(row)
-        return failures.length === 0 ? 'pass' : `fail: ${failures.join('; ')}`
-      }
-    ]
-  ]
-  return `<table><thead><tr>${columns.map(([label]) => `<th>${escapeHtml(label)}</th>`).join('')}</tr></thead><tbody>${rows
-    .map((row) => {
-      const failed = budgetFailures(row).length > 0
-      return `<tr class="${failed ? 'failed' : ''}">${columns
-        .map(([, getter]) => `<td>${escapeHtml(getter(row))}</td>`)
-        .join('')}</tr>`
+function renderHtml({ generatedAt, revisions }) {
+  const matrix = buildMatrix(revisions)
+  const charts =
+    revisions.length >= 2
+      ? matrix.orderedScenarios
+          .map((scenario) => {
+            const byRevision = matrix.scenarios.get(scenario)
+            const anyRow = [...byRevision.values()][0]
+            return renderTrendChart({
+              scenario,
+              byRevision,
+              revisions,
+              title: scenarioTitle(scenario, anyRow)
+            })
+          })
+          .filter(Boolean)
+          .join('')
+      : ''
+  const tables = matrix.orderedScenarios
+    .map((scenario) => {
+      const byRevision = matrix.scenarios.get(scenario)
+      const anyRow = [...byRevision.values()][0]
+      return renderScenarioTable({
+        scenario,
+        byRevision,
+        revisions,
+        title: scenarioTitle(scenario, anyRow)
+      })
     })
-    .join('')}</tbody></table>`
-}
-
-function renderHtml({ generatedAt, inputPaths, rows }) {
-  const failures = rows.flatMap((row) => budgetFailures(row).map((failure) => ({ failure, row })))
-  const grouped = groupRows(rows)
-  const chartSections = grouped
-    .map(([label, group]) =>
-      [
-        chartSvg(`${label}: typing latency`, group, [
-          { className: 'metric-a', key: 'medianMs', label: 'Median', suffix: 'ms' },
-          { className: 'metric-b', key: 'worstMs', label: 'Worst', suffix: 'ms' }
-        ]),
-        chartSvg(`${label}: renderer/main pressure`, group, [
-          { className: 'metric-c', key: 'rendererPeakQueuedChars', label: 'Renderer peak chars' },
-          { className: 'metric-d', key: 'mainPeakInFlightChars', label: 'Main in-flight chars' },
-          { className: 'metric-e', key: 'mainPeakPendingChars', label: 'Main pending chars' }
-        ]),
-        chartSvg(`${label}: restore and scroll`, group, [
-          { className: 'metric-f', key: 'restoreMs', label: 'Restore', suffix: 'ms' },
-          { className: 'metric-g', key: 'scrollMs', label: 'Scroll', suffix: 'ms' },
-          { className: 'metric-b', key: 'revisitMs', label: 'Revisit', suffix: 'ms' }
-        ])
-      ].join('')
-    )
+    .filter(Boolean)
     .join('')
+
   return `<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Terminal Performance Impact Report</title>
-  <style>
-    :root { color-scheme: light dark; --bg: #f8fafc; --fg: #111827; --muted: #64748b; --line: #cbd5e1; --card: #ffffff; --bad: #b91c1c; --ok: #047857; }
-    @media (prefers-color-scheme: dark) { :root { --bg: #0f172a; --fg: #e5e7eb; --muted: #94a3b8; --line: #334155; --card: #111827; --bad: #f87171; --ok: #34d399; } }
-    body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    main { max-width: 1180px; margin: 0 auto; padding: 32px 20px 48px; }
-    h1 { font-size: 28px; margin: 0 0 8px; }
-    h2 { font-size: 20px; margin: 32px 0 12px; }
-    h3 { font-size: 15px; margin: 18px 0 8px; }
-    .meta, .summary { color: var(--muted); }
-    .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 18px 0 24px; }
-    .card, .chart { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
-    .card strong { display: block; font-size: 24px; }
-    .ok { color: var(--ok); }
-    .bad { color: var(--bad); }
-    table { border-collapse: collapse; width: 100%; background: var(--card); border: 1px solid var(--line); }
-    th, td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
-    th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
-    tr.failed td:last-child { color: var(--bad); font-weight: 600; }
-    tr.improved td:nth-last-child(2), tr.improved td:last-child { color: var(--ok); font-weight: 600; }
-    tr.regressed td:nth-last-child(2), tr.regressed td:last-child { color: var(--bad); font-weight: 600; }
-    details { background: var(--card); border: 1px solid var(--line); border-radius: 8px; margin: 12px 0; padding: 10px 12px; }
-    summary { cursor: pointer; font-weight: 700; }
-    details table { margin-top: 12px; }
-    .chart { margin: 14px 0; }
-    .chart-title { font-weight: 700; margin-bottom: 8px; }
-    svg { width: 100%; height: auto; overflow: visible; }
-    svg line { stroke: var(--line); }
-    .axis-label, .axis-title { fill: var(--muted); font-size: 11px; }
-    .series { fill: none; stroke-width: 2.5; }
-    .point { stroke: var(--card); stroke-width: 1; }
-    .metric-a { stroke: #2563eb; fill: #2563eb; } .metric-b { stroke: #dc2626; fill: #dc2626; }
-    .metric-c { stroke: #7c3aed; fill: #7c3aed; } .metric-d { stroke: #059669; fill: #059669; } .metric-e { stroke: #f59e0b; fill: #f59e0b; }
-    .metric-f { stroke: #0891b2; fill: #0891b2; } .metric-g { stroke: #db2777; fill: #db2777; }
-    .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; }
-    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
-    .sources { word-break: break-all; }
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Terminal Performance Over Time</title>
+<style>${PAGE_CSS}</style>
 </head>
 <body>
-  <main>
-    <h1>Terminal Performance Impact Report</h1>
-    <p class="meta">Generated ${escapeHtml(generatedAt)} from ${inputPaths.length} Playwright JSON report${inputPaths.length === 1 ? '' : 's'}.</p>
-    <p class="sources">${inputPaths.map((path) => escapeHtml(path)).join('<br>')}</p>
-    <div class="cards">
-      <div class="card"><span>Scenario rows</span><strong>${rows.length}</strong></div>
-      <div class="card"><span>Budget status</span><strong class="${failures.length === 0 ? 'ok' : 'bad'}">${failures.length === 0 ? 'Pass' : `${failures.length} failure${failures.length === 1 ? '' : 's'}`}</strong></div>
-      <div class="card"><span>Max panes</span><strong>${Math.max(...rows.map((row) => row.panes ?? 0))}</strong></div>
-      <div class="card"><span>Max renderer peak chars</span><strong>${formatLargeValue(Math.max(...rows.map((row) => row.rendererPeakQueuedChars ?? 0)))}</strong></div>
-    </div>
-    ${renderComparisonSummary(rows)}
-    ${renderIncrementalComparisons(rows)}
-    <h2>Impact Charts</h2>
-    ${chartSections || '<p class="summary">No chartable pane-count rows were found.</p>'}
-    <h2>Scenario Metrics</h2>
-    ${renderTable(rows)}
-    <h2>Correctness Gates To Pair With This Report</h2>
-    <p class="summary">Pair this performance report with hidden TUI visual restore, terminal rendering golden, long-table restore, sleep/wake restore, SSH/remote ACK pressure, and WebSocket multiplex pressure evidence before declaring the terminal performance goal complete.</p>
-  </main>
+<h1>Terminal Performance Over Time</h1>
+<p class="meta">Generated ${escapeHtml(generatedAt)} from ${revisions.length} benchmark run(s), ordered oldest (baseline) to newest. All metrics: lower is better.</p>
+${renderInputsMeta(revisions)}
+${renderHeadline(revisions, matrix)}
+${charts ? `<section><h2>Trends across revisions</h2><div class="charts">${charts}</div></section>` : ''}
+<section><h2>Metric detail by scenario</h2>${tables}</section>
+${renderBudgets(revisions.at(-1))}
+<section><h2>Raw data</h2>${renderRawDetails(revisions)}</section>
 </body>
 </html>
 `
 }
 
-export function generateTerminalPerfHtmlReport({ inputPaths, outputPath, now = new Date() }) {
-  const rows = inputPaths.flatMap((path) =>
-    collectTerminalPerfRows(readJsonReport(path), basename(path))
-  )
-  if (rows.length === 0) {
-    throw new Error('No OpenCode terminal perf annotations found.')
+export function generateTerminalPerfHtmlReport({
+  inputs,
+  inputPaths,
+  outputPath,
+  now = new Date()
+}) {
+  // Why: older callers (the scale report gate) pass bare inputPaths.
+  const resolvedInputs =
+    inputs ??
+    (inputPaths ?? []).map((path) => ({
+      label: basename(path).replace(/\.json$/i, ''),
+      path
+    }))
+  const revisions = resolvedInputs.map(({ label, path }) => {
+    const report = readJsonReport(path)
+    return {
+      label,
+      path,
+      stats: report.stats ?? null,
+      rows: collectTerminalPerfRows(report, label)
+    }
+  })
+  const totalRows = revisions.reduce((sum, revision) => sum + revision.rows.length, 0)
+  if (totalRows === 0) {
+    throw new Error('No opencode terminal perf annotations found in the provided reports')
   }
+  const html = renderHtml({ generatedAt: now.toISOString(), revisions })
   mkdirSync(dirname(outputPath), { recursive: true })
-  const html = renderHtml({ generatedAt: now.toISOString(), inputPaths, rows })
   writeFileSync(outputPath, html)
-  return { outputPath, rowCount: rows.length, failureCount: rows.flatMap(budgetFailures).length }
+  const latestFailures = revisions
+    .at(-1)
+    .rows.reduce((sum, row) => sum + budgetFailures(row).length, 0)
+  return { outputPath, rowCount: totalRows, budgetFailureCount: latestFailures }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
+if (isMain) {
   try {
-    const result = generateTerminalPerfHtmlReport(parseHtmlReportArgs(process.argv.slice(2)))
+    const { inputs, outputPath } = parseHtmlReportArgs(process.argv.slice(2))
+    const result = generateTerminalPerfHtmlReport({ inputs, outputPath })
     console.log(
-      `Terminal perf HTML report saved to ${result.outputPath} (${result.rowCount} row${result.rowCount === 1 ? '' : 's'}, ${result.failureCount} budget failure${result.failureCount === 1 ? '' : 's'}).`
+      `Terminal perf HTML report saved to ${result.outputPath} (${result.rowCount} rows, ${result.budgetFailureCount} budget failures).`
     )
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))

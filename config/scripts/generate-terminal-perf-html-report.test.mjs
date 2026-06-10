@@ -59,22 +59,34 @@ afterEach(() => {
 })
 
 describe('generate-terminal-perf-html-report', () => {
-  it('parses input paths and output flags', () => {
+  it('parses labeled and bare input paths plus output flags', () => {
     expect(parseHtmlReportArgs(['--', 'a.json', 'b.json', '--output', 'out.html'])).toEqual({
-      inputPaths: ['a.json', 'b.json'],
+      inputs: [
+        { label: 'a', path: 'a.json' },
+        { label: 'b', path: 'b.json' }
+      ],
       outputPath: 'out.html'
     })
+    expect(parseHtmlReportArgs(['main=runs/0-main.json', '#5038 final=runs/4-final.json'])).toEqual(
+      {
+        inputs: [
+          { label: 'main', path: 'runs/0-main.json' },
+          { label: '#5038 final', path: 'runs/4-final.json' }
+        ],
+        outputPath: 'test-results/terminal-perf-impact-report.html'
+      }
+    )
     expect(
       parseHtmlReportArgs(['a.json'], { ORCA_E2E_TERMINAL_PERF_HTML_REPORT_PATH: 'env.html' })
     ).toEqual({
-      inputPaths: ['a.json'],
+      inputs: [{ label: 'a', path: 'a.json' }],
       outputPath: 'env.html'
     })
     expect(() => parseHtmlReportArgs(['--output'])).toThrow('--output requires a path')
     expect(() => parseHtmlReportArgs([])).toThrow('Usage:')
   })
 
-  it('writes an HTML report with charts, table rows, and escaped input', () => {
+  it('writes a single-run report with scenario tables and budget status', () => {
     const reportPath = writeReport(
       [
         'panes=25',
@@ -101,19 +113,20 @@ describe('generate-terminal-perf-html-report', () => {
     })
 
     const html = readFileSync(outputPath, 'utf8')
-    expect(result).toEqual({ failureCount: 0, outputPath, rowCount: 1 })
+    expect(result).toEqual({ budgetFailureCount: 0, outputPath, rowCount: 1 })
     expect(html).toContain('<!doctype html>')
-    expect(html).toContain('Terminal Performance Impact Report')
+    expect(html).toContain('Terminal Performance Over Time')
     expect(html).toContain('2026-06-09T10:00:00.000Z')
-    expect(html).toContain('Same workspace panes: typing latency')
+    expect(html).toContain('Same workspace panes — 25 panes')
     expect(html).toContain('opencode-scale-same-workspace-25')
     expect(html).toContain('28.6ms')
-    expect(html).toContain('<table>')
     expect(html).toContain('Pass')
+    // Why: one run has no over-time story; the trend section must not render.
+    expect(html).not.toContain('Trends across revisions')
     expect(html).not.toContain('browser-unrelated')
   })
 
-  it('marks over-budget rows as failures', () => {
+  it('marks over-budget rows as failures for the latest run', () => {
     const reportPath = writeReport(
       [
         'panes=100',
@@ -130,13 +143,13 @@ describe('generate-terminal-perf-html-report', () => {
     const result = generateTerminalPerfHtmlReport({ inputPaths: [reportPath], outputPath })
 
     const html = readFileSync(outputPath, 'utf8')
-    expect(result.failureCount).toBe(5)
-    expect(html).toContain('5 failures')
-    expect(html).toContain('fail: Median typing 80.0ms &gt; 75.0ms')
+    expect(result.budgetFailureCount).toBe(5)
+    expect(html).toContain('Fail')
+    expect(html).toContain('medianMs 80 &gt; 75')
     expect(html).toContain('Cross-workspace hidden panes')
   })
 
-  it('renders baseline, final, and incremental deltas for multiple reports', () => {
+  it('renders ordered revisions with trend charts and baseline deltas', () => {
     const mainReport = writeReport(
       'panes=25 median=50.0ms worst=120.0ms rendererDroppedBacklogs=0',
       'opencode-scale-same-workspace-25',
@@ -145,32 +158,86 @@ describe('generate-terminal-perf-html-report', () => {
     const middleReport = writeReport(
       'panes=25 median=30.0ms worst=140.0ms rendererDroppedBacklogs=0',
       'opencode-scale-same-workspace-25',
-      'pty-backpressure.json'
+      'backpressure.json'
     )
     const finalReport = writeReport(
       'panes=25 median=20.0ms worst=100.0ms rendererDroppedBacklogs=0',
       'opencode-scale-same-workspace-25',
-      'top-stack.json'
+      'final.json'
     )
     const outputPath = join(makeTempDir(), 'report.html')
 
     const result = generateTerminalPerfHtmlReport({
-      inputPaths: [mainReport, middleReport, finalReport],
+      inputs: [
+        { label: 'main', path: mainReport },
+        { label: 'backpressure', path: middleReport },
+        { label: 'final', path: finalReport }
+      ],
       outputPath
     })
 
     const html = readFileSync(outputPath, 'utf8')
     expect(result.rowCount).toBe(3)
-    expect(html).toContain('Baseline To Final Impact')
-    expect(html).toContain('main.json')
-    expect(html).toContain('top-stack.json')
-    expect(html).toContain('Incremental Stack Deltas')
-    expect(html).toContain('main.json → pty-backpressure.json')
-    expect(html).toContain('pty-backpressure.json → top-stack.json')
-    expect(html).toContain('-30.0ms')
-    expect(html).toContain('-60.0%')
-    expect(html).toContain('+20.0ms')
-    expect(html).toContain('+16.7%')
+    expect(html).toContain('Baseline vs latest')
+    expect(html).toContain('Trends across revisions')
+    expect(html).toContain('trend-chart')
+    expect(html).toContain('>main<')
+    expect(html).toContain('>backpressure<')
+    expect(html).toContain('>final<')
+    // Why: median 50 -> 20 is a 60% improvement and must read as better.
+    expect(html).toContain('delta better')
+    expect(html).toContain('-60%')
+    expect(html).toContain('50.0ms → 20.0ms')
+  })
+
+  it('renders missing scenarios at older revisions as gaps, not zeros', () => {
+    const mainReport = writeReport(
+      'panes=25 median=50.0ms rendererDroppedBacklogs=0',
+      'opencode-scale-same-workspace-25',
+      'main.json'
+    )
+    const finalReport = makeTempDir()
+    const finalPath = join(finalReport, 'final.json')
+    writeFileSync(
+      finalPath,
+      JSON.stringify({
+        suites: [
+          {
+            specs: [
+              {
+                tests: [
+                  {
+                    annotations: [
+                      {
+                        type: 'opencode-scale-same-workspace-25',
+                        description: 'panes=25 median=40.0ms rendererDroppedBacklogs=0'
+                      },
+                      {
+                        type: 'opencode-revisit-pressure',
+                        description: 'panes=19 median=3.0ms revisit=4.4ms rendererDroppedBacklogs=0'
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      })
+    )
+    const outputPath = join(makeTempDir(), 'report.html')
+
+    generateTerminalPerfHtmlReport({
+      inputs: [
+        { label: 'main', path: mainReport },
+        { label: 'final', path: finalPath }
+      ],
+      outputPath
+    })
+
+    const html = readFileSync(outputPath, 'utf8')
+    expect(html).toContain('Revisit under pressure')
+    expect(html).toContain('<td>—</td>')
   })
 
   it('fails when reports contain no terminal perf annotations', () => {
@@ -181,6 +248,6 @@ describe('generate-terminal-perf-html-report', () => {
         inputPaths: [reportPath],
         outputPath: join(makeTempDir(), 'report.html')
       })
-    ).toThrow('No OpenCode terminal perf annotations found.')
+    ).toThrow('No opencode terminal perf annotations found')
   })
 })
