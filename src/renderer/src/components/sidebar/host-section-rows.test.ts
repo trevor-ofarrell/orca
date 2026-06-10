@@ -387,6 +387,37 @@ describe('addHostSectionRows', () => {
     expect(sectioned).toEqual(rows)
   })
 
+  it('counts a collapsed repo group via its header count instead of zero', () => {
+    const local = repo('local')
+    const ssh = repo('ssh', 'ssh-1')
+    // The ssh repo group is collapsed: its header is present, items are not.
+    const collapsedSshHeader = { ...repoHeader(ssh), count: 9 }
+    const rows = [repoHeader(local), item('local-wt', local), collapsedSshHeader]
+
+    const sectioned = addHostSectionRows({
+      rows,
+      hostOptions: [
+        {
+          id: 'local',
+          kind: 'local',
+          label: 'Local Mac',
+          detail: 'This computer',
+          health: 'local'
+        },
+        { id: 'ssh:ssh-1', kind: 'ssh', label: 'Builder', detail: 'SSH', health: 'available' }
+      ],
+      workspaceHostScope: 'all',
+      defaultHostId: 'local'
+    })
+
+    expect(
+      sectioned.find((row) => row.type === 'host-header' && row.hostId === 'ssh:ssh-1')
+    ).toMatchObject({ count: 9 })
+    expect(
+      sectioned.find((row) => row.type === 'host-header' && row.hostId === 'local')
+    ).toMatchObject({ count: 1 })
+  })
+
   it('keeps a collapsed host header but hides its rows', () => {
     const local = repo('local')
     const ssh = repo('ssh', 'ssh-1')

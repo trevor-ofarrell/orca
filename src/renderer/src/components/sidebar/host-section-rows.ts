@@ -76,12 +76,31 @@ function getFallbackHost(hostId: ExecutionHostId): HostSectionOption {
 }
 
 function countWorktreeRows(rows: readonly Row[]): number {
+  // Why: a collapsed repo group contributes a header row but no item rows;
+  // fall back to the header's own count so the host badge doesn't read 0
+  // while a visibly populated project sits right under it.
   let count = 0
+  let pendingHeaderCount: number | null = null
+  let pendingHeaderHadItems = false
+  const flushHeader = (): void => {
+    if (pendingHeaderCount !== null && !pendingHeaderHadItems) {
+      count += pendingHeaderCount
+    }
+    pendingHeaderCount = null
+    pendingHeaderHadItems = false
+  }
   for (const row of rows) {
+    if (row.type === 'header') {
+      flushHeader()
+      pendingHeaderCount = row.count
+      continue
+    }
     if (row.type === 'item') {
       count += 1
+      pendingHeaderHadItems = pendingHeaderCount !== null
     }
   }
+  flushHeader()
   return count
 }
 
