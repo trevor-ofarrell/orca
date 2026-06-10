@@ -14,6 +14,8 @@ import {
 } from './worktree-list-groups'
 import type {
   DetectedWorktree,
+  Project,
+  ProjectHostSetup,
   Repo,
   ProjectGroup,
   Worktree,
@@ -49,6 +51,59 @@ const worktree: Worktree = {
 }
 
 const repoMap = new Map([[repo.id, repo]])
+
+const remoteRepo: Repo = {
+  id: 'repo-remote',
+  path: '/home/alice/orca',
+  displayName: 'orca',
+  badgeColor: '#111111',
+  addedAt: 1,
+  connectionId: 'gpu-vm'
+}
+
+const remoteWorktree: Worktree = {
+  ...worktree,
+  id: 'wt-remote',
+  repoId: remoteRepo.id,
+  path: '/home/alice/orca-feature',
+  displayName: 'remote feature'
+}
+
+const project: Project = {
+  id: 'github:stablyai/orca',
+  displayName: 'Orca',
+  badgeColor: '#737373',
+  sourceRepoIds: [repo.id, remoteRepo.id],
+  createdAt: 1,
+  updatedAt: 1
+}
+
+const projectHostSetups: ProjectHostSetup[] = [
+  {
+    id: repo.id,
+    projectId: project.id,
+    hostId: 'local',
+    repoId: repo.id,
+    path: repo.path,
+    displayName: repo.displayName,
+    setupState: 'ready',
+    setupMethod: 'legacy-repo',
+    createdAt: 1,
+    updatedAt: 1
+  },
+  {
+    id: remoteRepo.id,
+    projectId: project.id,
+    hostId: 'ssh:gpu-vm',
+    repoId: remoteRepo.id,
+    path: remoteRepo.path,
+    displayName: remoteRepo.displayName,
+    setupState: 'ready',
+    setupMethod: 'legacy-repo',
+    createdAt: 1,
+    updatedAt: 1
+  }
+]
 
 function makeDetectedWorktree(overrides: Partial<DetectedWorktree> = {}): DetectedWorktree {
   return {
@@ -251,6 +306,75 @@ describe('buildRows with pinned worktrees', () => {
     const rows = buildRows('repo', [worktree], new Map([[repo.id, lowercaseRepo]]), null, new Set())
 
     expect(rows[0]).toMatchObject({ type: 'header', label: 'c15t' })
+  })
+
+  it('groups multiple host setups for the same project under one project header', () => {
+    const rows = buildRows(
+      'repo',
+      [worktree, remoteWorktree],
+      new Map([
+        [repo.id, repo],
+        [remoteRepo.id, remoteRepo]
+      ]),
+      null,
+      new Set(),
+      undefined,
+      undefined,
+      undefined,
+      {},
+      new Map([
+        [worktree.id, worktree],
+        [remoteWorktree.id, remoteWorktree]
+      ]),
+      false,
+      undefined,
+      [],
+      new Set(),
+      new Map(),
+      [],
+      { projects: [project], projectHostSetups }
+    )
+
+    expect(rows).toMatchObject([
+      { type: 'header', key: 'project:github:stablyai/orca', label: 'Orca', count: 2 },
+      { type: 'item', worktree: { id: worktree.id } },
+      { type: 'item', worktree: { id: remoteWorktree.id } }
+    ])
+  })
+
+  it('keeps same-named repos separate without project setup identity', () => {
+    const rows = buildRows(
+      'repo',
+      [worktree, remoteWorktree],
+      new Map([
+        [repo.id, { ...repo, displayName: 'orca' }],
+        [remoteRepo.id, { ...remoteRepo, displayName: 'orca' }]
+      ]),
+      null,
+      new Set()
+    )
+
+    expect(rows.filter((row) => row.type === 'header')).toMatchObject([
+      { key: 'repo:repo-1' },
+      { key: 'repo:repo-remote' }
+    ])
+  })
+
+  it('returns project group keys for worktree reveal when project setup identity exists', () => {
+    expect(
+      getGroupKeyForWorktree(
+        'repo',
+        remoteWorktree,
+        new Map([[remoteRepo.id, remoteRepo]]),
+        null,
+        undefined,
+        undefined,
+        {
+          projects: [project],
+          projectHostSetups
+        }
+      )
+    ).toBe('project:github:stablyai/orca')
   })
 
   it('emits an imported worktrees card at the top of repo-group rows', () => {

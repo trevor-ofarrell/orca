@@ -680,10 +680,14 @@ Landed so far:
 - Hydrated renderer store `projects` and `projectHostSetups` alongside repos,
   with a repo-derived fallback for older preloads/runtimes that do not yet
   implement the project APIs.
+- Updated the sidebar `groupBy: repo` row builder to group by durable project
+  identity when project/setup data exists, while keeping a repo-by-repo fallback
+  for projects that have not been linked across hosts.
 - Added tests for local repos, SSH repos, same-provider multi-host grouping,
   no-identity same-name non-grouping, selector cache behavior, persistence
   backfill, repo mutation synchronization, renderer hydration, and runtime RPC
-  routing.
+  routing. Sidebar row-builder tests now cover project-first multi-host grouping
+  and same-name repo separation without project identity.
 
 Important limitation:
 
