@@ -176,7 +176,7 @@ export const CONTEXTUAL_TOURS = [
         preferredPlacement: 'left'
       },
       {
-        title: 'Park side work here',
+        title: 'Or use it as a scratchpad',
         body: 'Open agents, scratch terminals, notes, and browser tabs without cluttering the worktree you’re focused on.',
         targetSelector:
           '[data-contextual-tour-target="floating-workspace-new-markdown"], [data-contextual-tour-target="floating-workspace-surface"]',

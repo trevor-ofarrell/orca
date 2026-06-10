@@ -169,7 +169,7 @@ describe('contextual tour definitions', () => {
 
     expect(tour?.steps.map((step) => step.title)).toEqual([
       'Run an agent across every repo',
-      'Park side work here'
+      'Or use it as a scratchpad'
     ])
     expect(tour?.steps.map((step) => step.body)).toEqual([
       'Agents here run in any folder you choose. Point one at the directory above your services to work across all your repos at once.',
