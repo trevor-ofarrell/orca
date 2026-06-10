@@ -3324,7 +3324,8 @@
           "82594419ba": "필터"
         },
         "SidebarHostScopeStrip": {
-          "connectedCount": "{{value0}} connected"
+          "scopedTo": "{{value0}} only",
+          "backToAll": "All hosts"
         },
         "SidebarWorkspaceOptionsMenu": {
           "95c9754653": "에이전트 활동 레이아웃",

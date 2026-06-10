@@ -15,7 +15,6 @@ import {
   FolderInput,
   FolderPlus,
   Plus,
-  Server,
   Shapes,
   SlidersHorizontal,
   Trash2
@@ -473,26 +472,26 @@ function SectionMetricsBadge({ count }: { count: number }): React.JSX.Element {
   )
 }
 
-function HostHeaderHealthIcon({ health }: { health: HostHeaderRow['health'] }): React.JSX.Element {
+function HostHeaderHealthIcon({
+  health
+}: {
+  health: HostHeaderRow['health']
+}): React.JSX.Element | null {
+  // Why: healthy is the default state — indicating it adds noise. Only states
+  // needing attention (connecting, blocked, error, disconnected) get a mark.
   if (health === 'connecting') {
-    return <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+    return <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
   }
   if (health === 'blocked' || health === 'error') {
-    return <AlertTriangle className="size-3.5 shrink-0 text-destructive" />
+    return <AlertTriangle className="size-3 shrink-0 text-destructive" />
   }
-  return (
-    <Circle
-      className={cn(
-        'size-2.5 shrink-0 fill-current',
-        health === 'available' || health === 'local'
-          ? 'text-status-success'
-          : 'text-muted-foreground/55'
-      )}
-    />
-  )
+  if (health === 'disconnected') {
+    return <Circle className="size-2 shrink-0 fill-current text-muted-foreground/55" />
+  }
+  return null
 }
 
-function getHostHeaderDetail(row: HostHeaderRow): { text: string; isWarning: boolean } {
+function getHostHeaderDetail(row: HostHeaderRow): { text: string; isWarning: boolean } | null {
   // Why: a blocked compatibility verdict gets a compact warning treatment so one
   // skewed host stands out without altering how its siblings render.
   if (row.health === 'blocked') {
@@ -512,7 +511,12 @@ function getHostHeaderDetail(row: HostHeaderRow): { text: string; isWarning: boo
       isWarning: true
     }
   }
-  return { text: row.detail, isWarning: false }
+  // Why: the transport suffix only earns space on remote hosts; "This
+  // computer" on Local Mac is noise.
+  if (row.kind !== 'local') {
+    return { text: row.detail, isWarning: false }
+  }
+  return null
 }
 
 function HostSectionHeader({
@@ -525,14 +529,14 @@ function HostSectionHeader({
   const detail = getHostHeaderDetail(row)
   return (
     <div className="px-2 pt-1">
-      {/* Why: host headers are group labels, not cards — they must read as a
-          lighter tier than the host scope strip above, mirroring the other
-          sidebar group headers (clickable row, hover chevron, same type). */}
+      {/* Why: host headers are quiet group labels, one tier below workspace
+          cards — uppercase muted type, no icon, status mark only when the
+          host needs attention (matches the design doc's sidebar mock). */}
       <div
         role="button"
         tabIndex={0}
         aria-expanded={!row.collapsed}
-        className="group/host-header flex h-7 w-full cursor-pointer items-center gap-1.5 pr-1 text-left"
+        className="group/host-header flex h-6 w-full cursor-pointer items-center gap-1.5 pr-1 text-left"
         onClick={onToggle}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -541,18 +545,21 @@ function HostSectionHeader({
           }
         }}
       >
-        <Server className="size-3.5 shrink-0 text-muted-foreground" />
         <HostHeaderHealthIcon health={row.health} />
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <div className="min-w-0 truncate text-[13px] font-semibold leading-none">{row.label}</div>
-          <span
-            className={cn(
-              'shrink-0 truncate text-[10px] leading-none',
-              detail.isWarning ? 'text-destructive' : 'text-muted-foreground/70'
-            )}
-          >
-            {detail.text}
-          </span>
+        <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
+          <div className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {row.label}
+          </div>
+          {detail ? (
+            <span
+              className={cn(
+                'shrink-0 truncate text-[10px] leading-none',
+                detail.isWarning ? 'text-destructive' : 'text-muted-foreground/60'
+              )}
+            >
+              · {detail.text}
+            </span>
+          ) : null}
           <SectionMetricsBadge count={row.count} />
         </div>
         <div className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/60 opacity-0 transition-opacity group-hover/host-header:opacity-100">

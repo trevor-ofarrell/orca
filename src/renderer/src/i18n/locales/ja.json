@@ -3324,7 +3324,8 @@
           "82594419ba": "フィルター"
         },
         "SidebarHostScopeStrip": {
-          "connectedCount": "{{value0}} connected"
+          "scopedTo": "{{value0}} only",
+          "backToAll": "All hosts"
         },
         "SidebarWorkspaceOptionsMenu": {
           "95c9754653": "エージェントアクティビティのレイアウト",
