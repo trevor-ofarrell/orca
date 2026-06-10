@@ -2985,6 +2985,7 @@ export type SearchFileResult = {
   filePath: string
   relativePath: string
   matches: SearchMatch[]
+  matchCount?: number
 }
 
 export type SearchResult = {
