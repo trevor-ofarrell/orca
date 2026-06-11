@@ -145,7 +145,7 @@ function getDragCenter(
   }
 }
 
-function resolveDropZone(
+export function resolveDropZone(
   rect: { left: number; top: number; width: number; height: number },
   point: { x: number; y: number }
 ): TabDropZone {
