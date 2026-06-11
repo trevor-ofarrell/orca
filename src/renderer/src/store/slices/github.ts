@@ -1972,6 +1972,16 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           issuesError && envelope.sources.issues
             ? { ...issuesError, source: envelope.sources.issues }
             : undefined
+        // Why: a runtime build predating #5176 omits `originCandidate` from the
+        // envelope entirely, so it arrives as undefined and defeats the
+        // `!!sources.originCandidate` render gate that decides whether the
+        // upstream/origin selector shows. Pre-#5176 runtimes never routed PRs
+        // by upstream, so their effective `prs` source is always origin —
+        // default originCandidate to it, restoring the pre-#5176 gate behavior.
+        const normalizedSources: WorkItemsCacheSources = {
+          ...envelope.sources,
+          originCandidate: envelope.sources.originCandidate ?? envelope.sources.prs
+        }
         // Why: runtime switches reset server-scoped caches; queued old-runtime
         // responses can still satisfy callers but must not revive reset entries.
         if (activeRuntimeEnvironmentId(get().settings) !== requestRuntimeEnvironmentId) {
@@ -1987,7 +1997,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           workItemsCache: withBoundedCacheEntry(s.workItemsCache, key, {
             data: items,
             fetchedAt: Date.now(),
-            sources: envelope.sources,
+            sources: normalizedSources,
             ...(errorForCache ? { error: errorForCache } : {}),
             ...(envelope.issueSourceFellBack ? { issueSourceFellBack: true } : {})
           })
