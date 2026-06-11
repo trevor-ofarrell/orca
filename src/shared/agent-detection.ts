@@ -21,6 +21,8 @@ export { AGENT_NAMES, titleHasAgentName } from './agent-name-token-match'
 export type AgentStatus = 'working' | 'permission' | 'idle'
 
 const CLAUDE_IDLE = '\u2733' // ✳ (eight-spoked asterisk — Claude Code idle prefix)
+const CLAUDE_MANAGEMENT_TITLE_RE =
+  /^\s*(?:"(?:.*[\\/])?claude(?:\.(?:exe|cmd|bat|ps1))?"|'(?:.*[\\/])?claude(?:\.(?:exe|cmd|bat|ps1))?'|(?:.*[\\/])?claude(?:\.(?:exe|cmd|bat|ps1))?)\s+agents\s*$/i
 
 const GEMINI_WORKING = '\u2726' // ✦
 const GEMINI_SILENT_WORKING = '\u23F2' // ⏲
@@ -299,7 +301,7 @@ export function normalizeTerminalTitle(title: string): string {
  * agents have different (or no) caching semantics.
  */
 export function isClaudeAgent(title: string): boolean {
-  if (!title) {
+  if (!title || isClaudeManagementTitle(title)) {
     return false
   }
   const lower = title.toLowerCase()
@@ -335,7 +337,14 @@ export function isClaudeAgent(title: string): boolean {
   return false
 }
 
+export function isClaudeManagementTitle(title: string): boolean {
+  return CLAUDE_MANAGEMENT_TITLE_RE.test(title)
+}
+
 export function getAgentLabel(title: string): string | null {
+  if (isClaudeManagementTitle(title)) {
+    return null
+  }
   if (isGeminiTerminalTitle(title)) {
     return 'Gemini CLI'
   }
@@ -407,6 +416,9 @@ const CURSOR_NATIVE_TITLE_LOWER = 'cursor agent'
 
 export function detectAgentStatusFromTitle(title: string): AgentStatus | null {
   if (!title) {
+    return null
+  }
+  if (isClaudeManagementTitle(title)) {
     return null
   }
   // Why: "Cursor Agent" exactly (case-insensitive, no prefix/suffix) is cursor's
