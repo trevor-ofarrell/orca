@@ -661,6 +661,17 @@ function findWorktreeById(state: AppState, worktreeId: string): Worktree | null 
   return null
 }
 
+function isStaleExactLinkedPRLookup(
+  state: AppState,
+  worktreeId: string | undefined,
+  linkedPRNumber: number | null | undefined
+): boolean {
+  if (!worktreeId || linkedPRNumber == null) {
+    return false
+  }
+  return findWorktreeById(state, worktreeId)?.linkedPR !== linkedPRNumber
+}
+
 function buildPRRefreshCandidate(
   state: AppState,
   worktree: Worktree,
@@ -1175,6 +1186,7 @@ export type GitHubSlice = {
     repoPath: string,
     branch: string,
     options?: RepoScopedFetchOptions & {
+      worktreeId?: string
       linkedPRNumber?: number | null
       fallbackPRNumber?: number | null
       fallbackPRSource?: GitHubPRFallbackSource | null
@@ -2224,6 +2236,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
                 repoKind: repo?.kind ?? 'git',
                 branch,
                 cacheKey,
+                worktreeId: options?.worktreeId,
                 linkedPRNumber,
                 fallbackPRNumber,
                 fallbackPRSource,
@@ -2251,8 +2264,15 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           return cached?.data ?? null
         }
         if (prRequestGenerations.get(cacheKey) === generation) {
-          set((s) =>
-            setGitHubPRResultCaches(s, {
+          let skippedStaleLinkedPRLookup = false
+          set((s) => {
+            // Why: unlinking a PR while an exact linked-PR lookup is in flight
+            // must prevent that older result from restoring the manual link UI.
+            if (isStaleExactLinkedPRLookup(s, options?.worktreeId, linkedPRNumber)) {
+              skippedStaleLinkedPRLookup = true
+              return {}
+            }
+            return setGitHubPRResultCaches(s, {
               prCacheKey: cacheKey,
               repoPath,
               branch,
@@ -2267,7 +2287,10 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
               requestStartedAt,
               requestStartedEntry: requestStartedHostedReviewEntry
             })
-          )
+          })
+          if (skippedStaleLinkedPRLookup) {
+            return null
+          }
           debouncedSaveCache(get())
         }
         if (
@@ -2779,6 +2802,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
         force: bypassesGitHubPRRefreshFreshness(reason),
         repoId: candidate.repoId,
+        worktreeId: candidate.worktreeId,
         linkedPRNumber: candidate.linkedPRNumber ?? null,
         fallbackPRNumber: candidate.fallbackPRNumber ?? null,
         fallbackPRSource: candidate.fallbackPRSource ?? null
@@ -2793,6 +2817,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
             return get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
               force: bypassesGitHubPRRefreshFreshness(reason),
               repoId: candidate.repoId,
+              worktreeId: candidate.worktreeId,
               linkedPRNumber: candidate.linkedPRNumber ?? null,
               fallbackPRNumber: candidate.fallbackPRNumber ?? null,
               fallbackPRSource: candidate.fallbackPRSource ?? null
@@ -2818,6 +2843,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       for (const candidate of candidates) {
         void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
           repoId: candidate.repoId,
+          worktreeId: candidate.worktreeId,
           linkedPRNumber: candidate.linkedPRNumber ?? null,
           fallbackPRNumber: candidate.fallbackPRNumber ?? null,
           fallbackPRSource: candidate.fallbackPRSource ?? null
@@ -2921,6 +2947,11 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
                   return pr
                 })()
               : null
+          // Why: queued local refreshes may finish after the user unlinks an
+          // exact PR; those older results must not restore the manual-link UI.
+          if (isStaleExactLinkedPRLookup(s, alias.worktreeId, alias.linkedPRNumber)) {
+            continue
+          }
           const nextCaches = applyGitHubPRResultToCaches({
             prCache: nextPRCache,
             hostedReviewCache: nextHostedReviewCache,
@@ -3058,6 +3089,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       if (getRuntimeRepoTarget(state, candidate.repoPath)) {
         void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
           repoId: candidate.repoId,
+          worktreeId: candidate.worktreeId,
           linkedPRNumber: candidate.linkedPRNumber ?? null,
           fallbackPRNumber: candidate.fallbackPRNumber ?? null,
           fallbackPRSource: candidate.fallbackPRSource ?? null
@@ -3115,6 +3147,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
             force: true,
             repoId: candidate.repoId,
+            worktreeId: candidate.worktreeId,
             linkedPRNumber: candidate.linkedPRNumber ?? null,
             fallbackPRNumber: candidate.fallbackPRNumber ?? null,
             fallbackPRSource: candidate.fallbackPRSource ?? null
@@ -3299,6 +3332,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
             force: true,
             repoId: candidate.repoId,
+            worktreeId: candidate.worktreeId,
             linkedPRNumber: candidate.linkedPRNumber ?? null,
             fallbackPRNumber: candidate.fallbackPRNumber ?? null,
             fallbackPRSource: candidate.fallbackPRSource ?? null
