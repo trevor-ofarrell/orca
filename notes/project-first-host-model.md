@@ -770,16 +770,20 @@ Landed so far:
   compatibility rows are still refreshed from repos, but independently
   persisted projects/setups now survive load, repo update, and repo reorder
   paths instead of being overwritten by the repo projection.
+- Added a first-class `projectHostSetup.update` mutation through local IPC,
+  preload, runtime RPC, and CLI. Independent setup rows can update setup-owned
+  metadata directly, while repo-backed setup rows mirror safe fields onto the
+  existing repo record and reject path/state changes that require re-import.
 - Added tests for local repos, SSH repos, same-provider multi-host grouping,
   no-identity same-name non-grouping, selector cache behavior, persistence
   backfill, repo mutation synchronization, renderer hydration, runtime RPC
   routing, project-host setup capability gating, independent setup preservation,
-  setup method persistence, local/runtime/SSH clone setup composition, remote
-  clone IPC, and GitHub clone URL inference. Sidebar row-builder tests now cover
-  project-first multi-host grouping and same-name repo separation without
-  project identity. Workspace target tests cover local-only fallback,
-  focused-host setup selection, explicit project-plus-host resolution, same-name
-  non-merging, and unavailable setup reasons.
+  setup update mutation, setup method persistence, local/runtime/SSH clone setup
+  composition, remote clone IPC, and GitHub clone URL inference. Sidebar
+  row-builder tests now cover project-first multi-host grouping and same-name
+  repo separation without project identity. Workspace target tests cover
+  local-only fallback, focused-host setup selection, explicit project-plus-host
+  resolution, same-name non-merging, and unavailable setup reasons.
 
 Important limitation:
 
@@ -798,16 +802,16 @@ Important limitation:
 - Repo-backed project-host setup records are still regenerated from repo
   compatibility records. Independently persisted setup records are now preserved
   across load and repo mutations, but the UI/API still mostly creates setups
-  through repo-backed import/clone paths. A fully independent setup creation and
-  mutation table is still future work.
+  through repo-backed import/clone paths. First-class setup update now exists,
+  but independent setup create/delete and full UI flows are still future work.
 
 Remaining end-to-end work:
 
 - broaden setup-on-host flows beyond known local, SSH, and active runtime hosts
 - finish SSH clone streamed-progress parity, provisioning, and bulk setup-on-host
   flows
-- add first-class independent project-host setup creation/update/delete APIs
-  instead of routing most setup changes through repo import/update compatibility
+- add first-class independent project-host setup creation/delete APIs instead of
+  routing most setup changes through repo import/update compatibility
 - split settings into explicit client, host, project, and project-host setup
   scopes
 - validate the default project-first sidebar view in Electron and continue

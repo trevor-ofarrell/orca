@@ -2419,6 +2419,99 @@ describe('Store', () => {
     ])
   })
 
+  it('updates independent project host setup records directly', async () => {
+    const independentProject = makeProject({
+      id: 'cloud-project',
+      displayName: 'Cloud Project'
+    })
+    const independentSetup = makeProjectHostSetup({
+      id: 'cloud-project::gpu-vm',
+      projectId: independentProject.id,
+      hostId: 'runtime:gpu-vm',
+      repoId: '',
+      path: '/srv/cloud-project',
+      displayName: 'GPU VM'
+    })
+    writeDataFile({
+      ...getDefaultPersistedState(testState.dir),
+      projects: [independentProject],
+      projectHostSetups: [independentSetup]
+    })
+    const store = await createStore()
+
+    const result = store.updateProjectHostSetup({
+      setupId: independentSetup.id,
+      updates: {
+        displayName: 'GPU VM renamed',
+        path: '/srv/renamed',
+        worktreeBasePath: '../worktrees',
+        setupState: 'ready',
+        setupMethod: 'cloned',
+        gitUsername: 'alice'
+      }
+    })
+
+    expect(result).toEqual({
+      project: independentProject,
+      setup: expect.objectContaining({
+        id: independentSetup.id,
+        displayName: 'GPU VM renamed',
+        path: '/srv/renamed',
+        worktreeBasePath: '../worktrees',
+        setupState: 'ready',
+        setupMethod: 'cloned',
+        gitUsername: 'alice'
+      })
+    })
+    expect(store.getProjectHostSetups()[0]).toMatchObject({
+      displayName: 'GPU VM renamed',
+      path: '/srv/renamed'
+    })
+  })
+
+  it('updates repo-backed project host setup metadata through the repo record', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'r1', displayName: 'Repo', worktreeBasePath: '../old' }))
+
+    const result = store.updateProjectHostSetup({
+      setupId: 'r1',
+      updates: {
+        displayName: 'Repo renamed',
+        worktreeBasePath: '../new',
+        setupMethod: 'cloned'
+      }
+    })
+
+    expect(result?.repo).toMatchObject({
+      id: 'r1',
+      displayName: 'Repo renamed',
+      worktreeBasePath: '../new',
+      projectHostSetupMethod: 'cloned'
+    })
+    expect(result?.project).toMatchObject({
+      id: 'repo:r1',
+      displayName: 'Repo renamed'
+    })
+    expect(result?.setup).toMatchObject({
+      id: 'r1',
+      displayName: 'Repo renamed',
+      worktreeBasePath: '../new',
+      setupMethod: 'cloned'
+    })
+  })
+
+  it('rejects repo-backed project host setup path changes', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'r1', path: '/repo' }))
+
+    expect(() =>
+      store.updateProjectHostSetup({
+        setupId: 'r1',
+        updates: { path: '/other' }
+      })
+    ).toThrow('Repo-backed project host setup paths must be changed by re-importing the project.')
+  })
+
   it('updateRepo preserves repo-backed project host setup method', async () => {
     const store = await createStore()
     store.addRepo(makeRepo())

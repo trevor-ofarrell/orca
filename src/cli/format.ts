@@ -25,6 +25,7 @@ export type { ComputerActionFollowUpTarget } from './computer-format'
 export {
   formatProjectHostSetupList,
   formatProjectHostSetupResult,
+  formatProjectHostSetupUpdateResult,
   formatProjectList
 } from './project-format'
 export {

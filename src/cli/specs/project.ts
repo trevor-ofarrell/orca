@@ -32,5 +32,30 @@ export const PROJECT_COMMAND_SPECS: CommandSpec[] = [
       'orca project setup-existing-folder --project github:stablyai/orca --host local --path ~/orca',
       'orca project setup-existing-folder --project github:stablyai/orca --host runtime:gpu --path /home/me/orca --kind git --json'
     ]
+  },
+  {
+    path: ['project', 'setup-update'],
+    summary: 'Update project host setup metadata',
+    usage:
+      'orca project setup-update --setup <setup-id> [--display-name <name>] [--path <path>] [--worktree-base-path <path>] [--git-username <name>] [--kind git|folder] [--state ready|not-set-up|setting-up|error|unsupported] [--method legacy-repo|imported-existing-folder|cloned] [--json]',
+    allowedFlags: [
+      ...GLOBAL_FLAGS,
+      'setup',
+      'display-name',
+      'path',
+      'worktree-base-path',
+      'git-username',
+      'kind',
+      'state',
+      'method'
+    ],
+    notes: [
+      'Repo-backed setups mirror safe fields onto the repo record.',
+      'Path and availability state changes are only supported for independent setup records.'
+    ],
+    examples: [
+      'orca project setup-update --setup github:stablyai/orca::gpu --display-name "GPU VM"',
+      'orca project setup-update --setup github:stablyai/orca::gpu --path /srv/orca --state ready --json'
+    ]
   }
 ]

@@ -13,6 +13,8 @@ import type {
   ProjectGroupImportResult,
   ProjectHostSetupExistingFolderArgs,
   ProjectHostSetupResult,
+  ProjectHostSetupUpdateArgs,
+  ProjectHostSetupUpdateResult,
   NestedRepoScanResult,
   BaseRefDefaultResult,
   SparsePreset
@@ -453,6 +455,19 @@ const ProjectHostSetupExistingFolderIpcArgs = z.object({
   setupMethod: z.enum(['imported-existing-folder', 'cloned']).optional()
 })
 
+const ProjectHostSetupUpdateIpcArgs = z.object({
+  setupId: z.string().min(1),
+  updates: z.object({
+    displayName: z.string().optional(),
+    path: z.string().optional(),
+    worktreeBasePath: z.string().optional(),
+    setupState: z.enum(['ready', 'not-set-up', 'setting-up', 'error', 'unsupported']).optional(),
+    setupMethod: z.enum(['legacy-repo', 'imported-existing-folder', 'cloned']).optional(),
+    gitUsername: z.string().optional(),
+    kind: z.enum(['git', 'folder']).optional()
+  })
+})
+
 const ProjectGroupScanNestedArgs = z.object({
   path: z.string().min(1),
   connectionId: z.string().min(1).optional(),
@@ -742,6 +757,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.removeHandler('projects:list')
   ipcMain.removeHandler('projectHostSetups:list')
   ipcMain.removeHandler('projectHostSetups:setupExistingFolder')
+  ipcMain.removeHandler('projectHostSetups:update')
   ipcMain.removeHandler('projectGroups:list')
   ipcMain.removeHandler('projectGroups:create')
   ipcMain.removeHandler('projectGroups:update')
@@ -772,6 +788,23 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.handle('projects:list', () => store.getProjects())
 
   ipcMain.handle('projectHostSetups:list', () => store.getProjectHostSetups())
+
+  ipcMain.handle(
+    'projectHostSetups:update',
+    (_event, rawArgs: ProjectHostSetupUpdateArgs): ProjectHostSetupUpdateResult => {
+      const args = parseProjectGroupIpcArgs(
+        ProjectHostSetupUpdateIpcArgs,
+        rawArgs,
+        'project_host_setup_update_invalid_args'
+      )
+      const result = store.updateProjectHostSetup(args)
+      if (!result) {
+        throw new Error(`Project host setup not found: ${args.setupId}`)
+      }
+      notifyReposChanged(mainWindow)
+      return result
+    }
+  )
 
   ipcMain.handle(
     'projectHostSetups:setupExistingFolder',

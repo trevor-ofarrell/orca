@@ -142,10 +142,32 @@ export type ProjectHostSetupCloneArgs = {
   displayName?: string
 }
 
+export type ProjectHostSetupUpdateArgs = {
+  setupId: string
+  updates: Partial<
+    Pick<
+      ProjectHostSetup,
+      | 'displayName'
+      | 'path'
+      | 'worktreeBasePath'
+      | 'setupState'
+      | 'setupMethod'
+      | 'gitUsername'
+      | 'kind'
+    >
+  >
+}
+
 export type ProjectHostSetupResult = {
   project: Project
   setup: ProjectHostSetup
   repo: Repo
+}
+
+export type ProjectHostSetupUpdateResult = {
+  project: Project
+  setup: ProjectHostSetup
+  repo?: Repo
 }
 
 export type Repo = {

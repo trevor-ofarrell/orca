@@ -36,6 +36,8 @@ import type {
   PersistedState,
   Project,
   ProjectHostSetup,
+  ProjectHostSetupUpdateArgs,
+  ProjectHostSetupUpdateResult,
   ProjectHostSetupMethod,
   Repo,
   ProjectGroup,
@@ -2561,6 +2563,31 @@ export class Store {
     return [...this.state.projectHostSetups]
   }
 
+  updateProjectHostSetup(args: ProjectHostSetupUpdateArgs): ProjectHostSetupUpdateResult | null {
+    const setup = this.state.projectHostSetups.find((entry) => entry.id === args.setupId)
+    if (!setup) {
+      return null
+    }
+    const project = this.state.projects.find((entry) => entry.id === setup.projectId)
+    if (!project) {
+      return null
+    }
+    const repo = setup.repoId
+      ? this.state.repos.find((entry) => entry.id === setup.repoId)
+      : undefined
+    if (repo) {
+      const updated = this.updateRepoBackedProjectHostSetup(setup, repo, args.updates)
+      const updatedProject = updated
+        ? this.state.projects.find((entry) => entry.id === updated.setup.projectId)
+        : undefined
+      return updated && updatedProject
+        ? { project: updatedProject, setup: updated.setup, repo: updated.repo }
+        : null
+    }
+    const updatedSetup = this.updateIndependentProjectHostSetup(setup, args.updates)
+    return { project, setup: updatedSetup }
+  }
+
   /**
    * O(1) read of the persisted repo count. Use this when you only need the
    * count (e.g. cohort-classifier) — `getRepos()` hydrates each repo and
@@ -2823,6 +2850,83 @@ export class Store {
     const compatibilityState = mergeProjectHostSetupCompatibilityState(this.state, this.state.repos)
     this.state.projects = compatibilityState.projects
     this.state.projectHostSetups = compatibilityState.projectHostSetups
+  }
+
+  private updateRepoBackedProjectHostSetup(
+    setup: ProjectHostSetup,
+    repo: Repo,
+    updates: ProjectHostSetupUpdateArgs['updates']
+  ): { setup: ProjectHostSetup; repo: Repo } | null {
+    if (updates.path !== undefined && updates.path !== repo.path) {
+      throw new Error(
+        'Repo-backed project host setup paths must be changed by re-importing the project.'
+      )
+    }
+    if (updates.setupState !== undefined && updates.setupState !== 'ready') {
+      throw new Error('Repo-backed project host setups cannot be marked unavailable.')
+    }
+    const repoUpdates: Parameters<Store['updateRepo']>[1] = {}
+    if (updates.displayName !== undefined) {
+      repoUpdates.displayName = updates.displayName
+    }
+    if (updates.worktreeBasePath !== undefined) {
+      repoUpdates.worktreeBasePath = updates.worktreeBasePath
+    }
+    if (updates.kind !== undefined) {
+      repoUpdates.kind = updates.kind
+    }
+    if (updates.setupMethod !== undefined && updates.setupMethod !== 'legacy-repo') {
+      repoUpdates.projectHostSetupMethod = updates.setupMethod
+    }
+    const updatedRepo =
+      Object.keys(repoUpdates).length > 0 ? this.updateRepo(repo.id, repoUpdates) : repo
+    if (!updatedRepo) {
+      return null
+    }
+    return {
+      setup: this.state.projectHostSetups.find((entry) => entry.id === setup.id) ?? setup,
+      repo: updatedRepo
+    }
+  }
+
+  private updateIndependentProjectHostSetup(
+    setup: ProjectHostSetup,
+    updates: ProjectHostSetupUpdateArgs['updates']
+  ): ProjectHostSetup {
+    if (updates.displayName !== undefined) {
+      setup.displayName = updates.displayName.trim() || setup.displayName
+    }
+    if (updates.path !== undefined) {
+      setup.path = updates.path.trim() || setup.path
+    }
+    if (updates.worktreeBasePath !== undefined) {
+      const worktreeBasePath = updates.worktreeBasePath.trim()
+      if (worktreeBasePath) {
+        setup.worktreeBasePath = worktreeBasePath
+      } else {
+        delete setup.worktreeBasePath
+      }
+    }
+    if (updates.kind !== undefined) {
+      setup.kind = updates.kind
+    }
+    if (updates.gitUsername !== undefined) {
+      const gitUsername = updates.gitUsername.trim()
+      if (gitUsername) {
+        setup.gitUsername = gitUsername
+      } else {
+        delete setup.gitUsername
+      }
+    }
+    if (updates.setupState !== undefined) {
+      setup.setupState = updates.setupState
+    }
+    if (updates.setupMethod !== undefined) {
+      setup.setupMethod = updates.setupMethod
+    }
+    setup.updatedAt = Date.now()
+    this.scheduleSave()
+    return setup
   }
 
   private hydrateRepo(repo: Repo): Repo {

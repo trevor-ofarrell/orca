@@ -1,4 +1,9 @@
-import type { Project, ProjectHostSetup, ProjectHostSetupResult } from '../shared/types'
+import type {
+  Project,
+  ProjectHostSetup,
+  ProjectHostSetupResult,
+  ProjectHostSetupUpdateResult
+} from '../shared/types'
 
 export function formatProjectList(result: { projects: Project[] }): string {
   if (result.projects.length === 0) {
@@ -28,6 +33,21 @@ export function formatProjectHostSetupList(result: { setups: ProjectHostSetup[] 
 
 export function formatProjectHostSetupResult(result: { result: ProjectHostSetupResult }): string {
   const { project, setup, repo } = result.result
+  return formatProjectHostSetupResultFields(project, setup, repo.id)
+}
+
+export function formatProjectHostSetupUpdateResult(result: {
+  result: ProjectHostSetupUpdateResult
+}): string {
+  const { project, setup, repo } = result.result
+  return formatProjectHostSetupResultFields(project, setup, repo?.id)
+}
+
+function formatProjectHostSetupResultFields(
+  project: Project,
+  setup: ProjectHostSetup,
+  repoId: string | undefined
+): string {
   return [
     `projectId: ${project.id}`,
     `project: ${project.displayName}`,
@@ -36,6 +56,6 @@ export function formatProjectHostSetupResult(result: { result: ProjectHostSetupR
     `path: ${setup.path}`,
     `state: ${setup.setupState}`,
     `method: ${setup.setupMethod}`,
-    `repoId: ${repo.id}`
+    `repoId: ${repoId ?? 'none'}`
   ].join('\n')
 }

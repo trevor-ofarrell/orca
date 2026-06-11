@@ -3,12 +3,15 @@ import type {
   ProjectHostSetup,
   ProjectHostSetupExistingFolderArgs,
   ProjectHostSetupResult,
+  ProjectHostSetupUpdateArgs,
+  ProjectHostSetupUpdateResult,
   RepoKind
 } from '../../shared/types'
 import type { CommandHandler } from '../dispatch'
 import {
   formatProjectHostSetupList,
   formatProjectHostSetupResult,
+  formatProjectHostSetupUpdateResult,
   formatProjectList,
   printResult
 } from '../format'
@@ -57,5 +60,66 @@ export const PROJECT_HANDLERS: Record<string, CommandHandler> = {
       args
     )
     printResult(result, json, formatProjectHostSetupResult)
+  },
+  'project setup-update': async ({ flags, client, cwd, json }) => {
+    const path = getOptionalStringFlag(flags, 'path')
+    const args: ProjectHostSetupUpdateArgs = {
+      setupId: getRequiredStringFlag(flags, 'setup'),
+      updates: {
+        displayName: getOptionalStringFlag(flags, 'display-name'),
+        path:
+          path === undefined
+            ? undefined
+            : resolveRepoPathArgument(path, cwd, client.isRemote, 'Project setup update'),
+        worktreeBasePath: getOptionalStringFlag(flags, 'worktree-base-path'),
+        gitUsername: getOptionalStringFlag(flags, 'git-username'),
+        kind: getOptionalRepoKind(flags),
+        setupState: getOptionalSetupState(flags),
+        setupMethod: getOptionalSetupMethod(flags)
+      }
+    }
+    const result = await client.call<{ result: ProjectHostSetupUpdateResult }>(
+      'projectHostSetup.update',
+      args
+    )
+    printResult(result, json, formatProjectHostSetupUpdateResult)
   }
+}
+
+function getOptionalSetupState(
+  flags: Map<string, string | boolean>
+): ProjectHostSetupUpdateArgs['updates']['setupState'] {
+  const state = getOptionalStringFlag(flags, 'state')
+  if (state === undefined) {
+    return undefined
+  }
+  if (
+    state === 'ready' ||
+    state === 'not-set-up' ||
+    state === 'setting-up' ||
+    state === 'error' ||
+    state === 'unsupported'
+  ) {
+    return state
+  }
+  throw new RuntimeClientError(
+    'invalid_argument',
+    '--state must be ready, not-set-up, setting-up, error, or unsupported'
+  )
+}
+
+function getOptionalSetupMethod(
+  flags: Map<string, string | boolean>
+): ProjectHostSetupUpdateArgs['updates']['setupMethod'] {
+  const method = getOptionalStringFlag(flags, 'method')
+  if (method === undefined) {
+    return undefined
+  }
+  if (method === 'legacy-repo' || method === 'imported-existing-folder' || method === 'cloned') {
+    return method
+  }
+  throw new RuntimeClientError(
+    'invalid_argument',
+    '--method must be legacy-repo, imported-existing-folder, or cloned'
+  )
 }

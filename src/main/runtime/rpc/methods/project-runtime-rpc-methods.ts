@@ -19,6 +19,19 @@ const ProjectHostSetupExistingFolder = z.object({
   setupMethod: z.enum(['imported-existing-folder', 'cloned']).optional()
 })
 
+const ProjectHostSetupUpdate = z.object({
+  setupId: requiredString('Missing setup ID'),
+  updates: z.object({
+    displayName: OptionalString,
+    path: OptionalString,
+    worktreeBasePath: OptionalString,
+    setupState: z.enum(['ready', 'not-set-up', 'setting-up', 'error', 'unsupported']).optional(),
+    setupMethod: z.enum(['legacy-repo', 'imported-existing-folder', 'cloned']).optional(),
+    gitUsername: OptionalString,
+    kind: z.enum(['git', 'folder']).optional()
+  })
+})
+
 export const PROJECT_RUNTIME_METHODS: RpcMethod[] = [
   defineMethod({
     name: 'project.list',
@@ -35,6 +48,13 @@ export const PROJECT_RUNTIME_METHODS: RpcMethod[] = [
     params: ProjectHostSetupExistingFolder,
     handler: async (params, { runtime }) => ({
       result: await runtime.setupProjectExistingFolder(params)
+    })
+  }),
+  defineMethod({
+    name: 'projectHostSetup.update',
+    params: ProjectHostSetupUpdate,
+    handler: (params, { runtime }) => ({
+      result: runtime.updateProjectHostSetup(params)
     })
   })
 ]

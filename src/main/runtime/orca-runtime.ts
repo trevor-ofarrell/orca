@@ -54,6 +54,8 @@ import type {
   ProjectHostSetup,
   ProjectHostSetupExistingFolderArgs,
   ProjectHostSetupResult,
+  ProjectHostSetupUpdateArgs,
+  ProjectHostSetupUpdateResult,
   Repo,
   RemoveWorktreeResult,
   StatsSummary,
@@ -529,6 +531,7 @@ type RuntimeStore = {
   updateRepo: Store['updateRepo']
   getProjects?: Store['getProjects']
   getProjectHostSetups?: Store['getProjectHostSetups']
+  updateProjectHostSetup?: Store['updateProjectHostSetup']
   getProjectGroups?: Store['getProjectGroups']
   createProjectGroup?: Store['createProjectGroup']
   updateProjectGroup?: Store['updateProjectGroup']
@@ -6498,6 +6501,17 @@ export class OrcaRuntimeService {
       throw new Error(`Project setup was created without a project record: ${setup.projectId}`)
     }
     return { project, setup, repo }
+  }
+
+  updateProjectHostSetup(args: ProjectHostSetupUpdateArgs): ProjectHostSetupUpdateResult {
+    if (!this.store?.updateProjectHostSetup) {
+      throw new Error('runtime_unavailable')
+    }
+    const result = this.store.updateProjectHostSetup(args)
+    if (!result) {
+      throw new Error(`Project host setup not found: ${args.setupId}`)
+    }
+    return result
   }
 
   listProjectGroups(): ProjectGroup[] {

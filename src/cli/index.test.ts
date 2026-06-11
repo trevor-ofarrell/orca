@@ -144,6 +144,9 @@ describe('orca root help', () => {
     expect(logSpy.mock.calls[0][0]).toContain(
       'project setup-existing-folder Make a project available on a host by importing an existing folder'
     )
+    expect(logSpy.mock.calls[0][0]).toContain(
+      'project setup-update      Update project host setup metadata'
+    )
     expect(callMock).not.toHaveBeenCalled()
   })
 })
@@ -3067,5 +3070,70 @@ describe('orca cli worktree awareness', () => {
     expect(process.exitCode).toBe(1)
 
     process.exitCode = priorExitCode
+  })
+
+  it('updates project host setup metadata through the project-first runtime API', async () => {
+    queueFixtures(
+      callMock,
+      okFixture('req_project_setup_update', {
+        result: {
+          project: {
+            id: 'github:stablyai/orca',
+            displayName: 'Orca',
+            badgeColor: '#7c3aed',
+            sourceRepoIds: [],
+            createdAt: 1,
+            updatedAt: 1
+          },
+          setup: {
+            id: 'setup-gpu',
+            projectId: 'github:stablyai/orca',
+            hostId: 'runtime:gpu',
+            repoId: '',
+            path: '/srv/orca',
+            displayName: 'GPU VM',
+            setupState: 'ready',
+            setupMethod: 'imported-existing-folder',
+            createdAt: 1,
+            updatedAt: 2
+          }
+        }
+      })
+    )
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await main(
+      [
+        'project',
+        'setup-update',
+        '--setup',
+        'setup-gpu',
+        '--display-name',
+        'GPU VM',
+        '--path',
+        '/srv/orca',
+        '--worktree-base-path',
+        '../worktrees',
+        '--state',
+        'ready',
+        '--method',
+        'imported-existing-folder',
+        '--json'
+      ],
+      '/tmp/repo'
+    )
+
+    expect(callMock).toHaveBeenCalledWith('projectHostSetup.update', {
+      setupId: 'setup-gpu',
+      updates: {
+        displayName: 'GPU VM',
+        path: '/srv/orca',
+        worktreeBasePath: '../worktrees',
+        gitUsername: undefined,
+        kind: undefined,
+        setupState: 'ready',
+        setupMethod: 'imported-existing-folder'
+      }
+    })
   })
 })
