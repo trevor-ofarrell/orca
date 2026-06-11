@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   getPRCommentGroupId,
   getPRCommentGroupRoot,
@@ -18,12 +18,23 @@ export type PRCommentsListSelection = {
   toggleGroupSelection: (groupId: string, checked: boolean) => void
 }
 
+type PRCommentsListSelectionState = {
+  contextKey: string | undefined
+  isSelectingForAI: boolean
+  selectedGroupIds: Set<string>
+}
+
+const EMPTY_SELECTED_GROUP_IDS = new Set<string>()
+
 export function usePRCommentsListSelection(
   comments: PRComment[],
   selectionContextKey: string | undefined
 ): PRCommentsListSelection {
-  const [isSelectingForAI, setIsSelectingForAI] = useState(false)
-  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(() => new Set())
+  const [selectionState, setSelectionState] = useState<PRCommentsListSelectionState>(() => ({
+    contextKey: selectionContextKey,
+    isSelectingForAI: false,
+    selectedGroupIds: new Set()
+  }))
 
   // Why: selectable groups come from the unfiltered list so switching the
   // audience filter doesn't silently drop already-selected comments.
@@ -39,6 +50,24 @@ export function usePRCommentsListSelection(
     }
     return map
   }, [selectableGroups])
+  const isCurrentSelectionContext = selectionState.contextKey === selectionContextKey
+  const candidateSelectedGroupIds = isCurrentSelectionContext
+    ? selectionState.selectedGroupIds
+    : EMPTY_SELECTED_GROUP_IDS
+  const selectedGroupIds = useMemo(() => {
+    let pruned = false
+    const next = new Set<string>()
+    for (const groupId of candidateSelectedGroupIds) {
+      if (selectableGroupsById.has(groupId)) {
+        next.add(groupId)
+      } else {
+        pruned = true
+      }
+    }
+    return pruned ? next : candidateSelectedGroupIds
+  }, [candidateSelectedGroupIds, selectableGroupsById])
+  const isSelectingForAI =
+    isCurrentSelectionContext && selectionState.isSelectingForAI && selectableGroupsById.size > 0
   const selectedGroups = useMemo(
     () =>
       [...selectedGroupIds]
@@ -47,55 +76,51 @@ export function usePRCommentsListSelection(
     [selectableGroupsById, selectedGroupIds]
   )
 
-  // Why: a selection belongs to one review context; switching PR/MR or branch
-  // must not carry checked comments over to the next review.
-  useEffect(() => {
-    setIsSelectingForAI(false)
-    setSelectedGroupIds(new Set())
-  }, [selectionContextKey])
-
-  // Why: comments can become ineligible mid-selection (resolved elsewhere,
-  // refreshed comments); prune them so "Send selected" never submits stale ids.
-  useEffect(() => {
-    if (!isSelectingForAI) {
-      return
-    }
-    setSelectedGroupIds((prev) => {
-      const next = new Set([...prev].filter((groupId) => selectableGroupsById.has(groupId)))
-      return next.size === prev.size ? prev : next
-    })
-    if (selectableGroupsById.size === 0) {
-      setIsSelectingForAI(false)
-    }
-  }, [selectableGroupsById, isSelectingForAI])
-
   const addGroupToSelection = useCallback(
     (groupId: string): void => {
       if (!selectableGroupsById.has(groupId)) {
         return
       }
-      setIsSelectingForAI(true)
-      setSelectedGroupIds(new Set([groupId]))
+      setSelectionState({
+        contextKey: selectionContextKey,
+        isSelectingForAI: true,
+        selectedGroupIds: new Set([groupId])
+      })
     },
-    [selectableGroupsById]
+    [selectableGroupsById, selectionContextKey]
   )
 
   const clearSelection = useCallback((): void => {
-    setIsSelectingForAI(false)
-    setSelectedGroupIds(new Set())
-  }, [])
-
-  const toggleGroupSelection = useCallback((groupId: string, checked: boolean): void => {
-    setSelectedGroupIds((prev) => {
-      const next = new Set(prev)
-      if (checked) {
-        next.add(groupId)
-      } else {
-        next.delete(groupId)
-      }
-      return next
+    setSelectionState({
+      contextKey: selectionContextKey,
+      isSelectingForAI: false,
+      selectedGroupIds: new Set()
     })
-  }, [])
+  }, [selectionContextKey])
+
+  const toggleGroupSelection = useCallback(
+    (groupId: string, checked: boolean): void => {
+      if (!selectableGroupsById.has(groupId)) {
+        return
+      }
+      setSelectionState((prev) => {
+        const base =
+          prev.contextKey === selectionContextKey ? prev.selectedGroupIds : EMPTY_SELECTED_GROUP_IDS
+        const next = new Set([...base].filter((id) => selectableGroupsById.has(id)))
+        if (checked) {
+          next.add(groupId)
+        } else {
+          next.delete(groupId)
+        }
+        return {
+          contextKey: selectionContextKey,
+          isSelectingForAI: true,
+          selectedGroupIds: next
+        }
+      })
+    },
+    [selectableGroupsById, selectionContextKey]
+  )
 
   return {
     isSelectingForAI,
