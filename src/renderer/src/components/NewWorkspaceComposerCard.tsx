@@ -2,6 +2,7 @@
 composer card markup together so the inline and modal variants share one UI
 surface without splitting the controlled form into hard-to-follow fragments. */
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   AlertTriangle,
   Check,
@@ -92,15 +93,21 @@ type NewWorkspaceComposerCardProps = {
   onSparseSelectPreset: (preset: SparsePreset | null) => void
 }
 
-const SSH_STATUS_LABELS: Record<SshConnectionStatus, string> = {
+const SSH_STATUS_LABEL_FALLBACKS: Partial<Record<SshConnectionStatus, string>> = {
   disconnected: 'SSH not connected',
   connecting: 'Connecting SSH...',
   'auth-failed': 'SSH authentication failed',
   'deploying-relay': 'Preparing SSH connection...',
   connected: 'Connected',
   reconnecting: 'Reconnecting SSH...',
-  'reconnection-failed': 'SSH reconnection failed',
-  error: translate('auto.components.NewWorkspaceComposerCard.a239038146', 'SSH connection error')
+  'reconnection-failed': 'SSH reconnection failed'
+}
+
+function getSshStatusLabel(status: SshConnectionStatus): string {
+  if (status === 'error') {
+    return translate('auto.components.NewWorkspaceComposerCard.a239038146', 'SSH connection error')
+  }
+  return SSH_STATUS_LABEL_FALLBACKS[status] ?? status
 }
 
 function SetupCommandPreview({
@@ -270,6 +277,9 @@ export default function NewWorkspaceComposerCard({
   sparseSelectedPresetId,
   onSparseSelectPreset
 }: NewWorkspaceComposerCardProps): React.JSX.Element {
+  // Why: this form uses the lightweight translate() helper directly; subscribe
+  // so an already-open create dialog repaints when the UI language changes.
+  useTranslation()
   const { isFileDragOver, dragHandlers } = useComposerFileDragOver()
   const openModal = useAppStore((s) => s.openModal)
   const activeModal = useAppStore((s) => s.activeModal)
@@ -283,7 +293,7 @@ export default function NewWorkspaceComposerCard({
     return repo?.displayName ?? repo?.path ?? 'This project'
   }, [eligibleRepos, repoId])
   const sshStatusLabel = selectedRepoSshStatus
-    ? SSH_STATUS_LABELS[selectedRepoSshStatus]
+    ? getSshStatusLabel(selectedRepoSshStatus)
     : 'Not connected'
   const connectButtonLabel =
     selectedRepoSshStatus === 'disconnected' || selectedRepoSshStatus === null

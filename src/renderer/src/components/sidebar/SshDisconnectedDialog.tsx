@@ -27,10 +27,12 @@ const STATUS_MESSAGES: Partial<Record<SshConnectionStatus, string>> = {
   disconnected: 'This remote repository is not connected.',
   reconnecting: 'Reconnecting to the remote host...',
   'reconnection-failed': 'Reconnection to the remote host failed.',
-  error: translate(
-    'auto.components.sidebar.SshDisconnectedDialog.376bed88e5',
-    'The connection to the remote host encountered an error.'
-  ),
+  get error() {
+    return translate(
+      'auto.components.sidebar.SshDisconnectedDialog.376bed88e5',
+      'The connection to the remote host encountered an error.'
+    )
+  },
   'auth-failed': 'Authentication to the remote host failed.'
 }
 
