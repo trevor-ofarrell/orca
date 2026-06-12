@@ -17,8 +17,12 @@ export const FEATURE_TOUR_PREVIEW_COPY: readonly FeatureTourPreviewFrameCopy[] =
         'Isolated workspaces'
       )
     },
-    caption:
-      'Ship several things at once. Each workspace keeps its branch, terminal, and agent activity together.'
+    get caption() {
+      return translate(
+        'auto.components.feature.wall.FeatureTourPreview.47f16ecf34',
+        'Ship several things at once. Each workspace keeps its branch, terminal, and agent activity together.'
+      )
+    }
   },
   {
     id: 2,
@@ -28,7 +32,12 @@ export const FEATURE_TOUR_PREVIEW_COPY: readonly FeatureTourPreviewFrameCopy[] =
         'Agent orchestration'
       )
     },
-    caption: 'Hand off a goal and walk away. A coordinator agent fans out and ships parallel PRs.'
+    get caption() {
+      return translate(
+        'auto.components.feature.wall.FeatureTourPreview.70aa182266',
+        'Hand off a goal and walk away. A coordinator agent fans out and ships parallel PRs.'
+      )
+    }
   },
   {
     id: 3,
@@ -38,8 +47,12 @@ export const FEATURE_TOUR_PREVIEW_COPY: readonly FeatureTourPreviewFrameCopy[] =
         'GitHub & Linear tasks'
       )
     },
-    caption:
-      'Skip the tab-switching. Pick from your GitHub or Linear backlog and start a workspace in one click.'
+    get caption() {
+      return translate(
+        'auto.components.feature.wall.FeatureTourPreview.f10c14dd9d',
+        'Skip the tab-switching. Pick from your GitHub or Linear backlog and start a workspace in one click.'
+      )
+    }
   },
   {
     id: 4,
@@ -49,8 +62,12 @@ export const FEATURE_TOUR_PREVIEW_COPY: readonly FeatureTourPreviewFrameCopy[] =
         'Splittable terminal'
       )
     },
-    caption:
-      'Open any workspace to return to its terminal, then split panes for tests, logs, and agents.'
+    get caption() {
+      return translate(
+        'auto.components.feature.wall.FeatureTourPreview.5d6ee181b6',
+        'Open any workspace to return to its terminal, then split panes for tests, logs, and agents.'
+      )
+    }
   }
 ]
 

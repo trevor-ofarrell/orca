@@ -142,19 +142,7 @@ export function SourceControlAiActionRecipeDefaults({
     <SearchableSetting
       title={ACTION_RECIPES_SEARCH_ENTRY.title}
       description={ACTION_RECIPES_SEARCH_ENTRY.description}
-      keywords={[
-        'agent',
-        'arguments',
-        'args',
-        'cli',
-        'command',
-        'model',
-        'template',
-        'fix',
-        'checks',
-        'commit',
-        'pull request'
-      ]}
+      keywords={ACTION_RECIPES_SEARCH_ENTRY.keywords}
       className="space-y-3 px-1 py-2"
     >
       <div className="space-y-0.5">

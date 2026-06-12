@@ -100,21 +100,50 @@ type NewWorkspaceComposerCardProps = {
   sparseControlsEnabled?: boolean
 }
 
-const SSH_STATUS_LABEL_FALLBACKS: Partial<Record<SshConnectionStatus, string>> = {
-  disconnected: 'SSH not connected',
-  connecting: 'Connecting SSH...',
-  'auth-failed': 'SSH authentication failed',
-  'deploying-relay': 'Preparing SSH connection...',
-  connected: 'Connected',
-  reconnecting: 'Reconnecting SSH...',
-  'reconnection-failed': 'SSH reconnection failed'
+const SSH_STATUS_LABELS: Partial<Record<SshConnectionStatus, string>> = {
+  get disconnected() {
+    return translate(
+      'auto.components.NewWorkspaceComposerCard.sshNotConnected',
+      'SSH not connected'
+    )
+  },
+  get connecting() {
+    return translate('auto.components.NewWorkspaceComposerCard.connectingSsh', 'Connecting SSH...')
+  },
+  get 'auth-failed'() {
+    return translate(
+      'auto.components.NewWorkspaceComposerCard.sshAuthenticationFailed',
+      'SSH authentication failed'
+    )
+  },
+  get 'deploying-relay'() {
+    return translate(
+      'auto.components.NewWorkspaceComposerCard.preparingSshConnection',
+      'Preparing SSH connection...'
+    )
+  },
+  get connected() {
+    return translate('auto.components.NewWorkspaceComposerCard.connected', 'Connected')
+  },
+  get reconnecting() {
+    return translate(
+      'auto.components.NewWorkspaceComposerCard.reconnectingSsh',
+      'Reconnecting SSH...'
+    )
+  },
+  get 'reconnection-failed'() {
+    return translate(
+      'auto.components.NewWorkspaceComposerCard.sshReconnectionFailed',
+      'SSH reconnection failed'
+    )
+  },
+  get error() {
+    return translate('auto.components.NewWorkspaceComposerCard.a239038146', 'SSH connection error')
+  }
 }
 
 function getSshStatusLabel(status: SshConnectionStatus): string {
-  if (status === 'error') {
-    return translate('auto.components.NewWorkspaceComposerCard.a239038146', 'SSH connection error')
-  }
-  return SSH_STATUS_LABEL_FALLBACKS[status] ?? status
+  return SSH_STATUS_LABELS[status] ?? status
 }
 
 function SetupCommandPreview({
@@ -308,7 +337,7 @@ export default function NewWorkspaceComposerCard({
   }, [eligibleRepos, repoId])
   const sshStatusLabel = selectedRepoSshStatus
     ? getSshStatusLabel(selectedRepoSshStatus)
-    : 'Not connected'
+    : translate('auto.components.NewWorkspaceComposerCard.notConnected', 'Not connected')
   const connectButtonLabel =
     selectedRepoSshStatus === 'disconnected' || selectedRepoSshStatus === null
       ? 'Connect'

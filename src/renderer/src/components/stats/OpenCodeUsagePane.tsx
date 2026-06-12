@@ -50,10 +50,18 @@ const SCOPE_OPTIONS: { value: OpenCodeUsageScope; label: string }[] = [
   }
 ]
 const RANGE_LABELS: Record<OpenCodeUsageRange, string> = {
-  '7d': 'Last 7 days',
-  '30d': 'Last 30 days',
-  '90d': 'Last 90 days',
-  all: 'All time'
+  get '7d'() {
+    return translate('auto.components.stats.OpenCodeUsagePane.rangeLast7Days', 'Last 7 days')
+  },
+  get '30d'() {
+    return translate('auto.components.stats.OpenCodeUsagePane.rangeLast30Days', 'Last 30 days')
+  },
+  get '90d'() {
+    return translate('auto.components.stats.OpenCodeUsagePane.rangeLast90Days', 'Last 90 days')
+  },
+  get all() {
+    return translate('auto.components.stats.OpenCodeUsagePane.rangeAllTime', 'All time')
+  }
 }
 
 export function OpenCodeUsagePane(): React.JSX.Element {

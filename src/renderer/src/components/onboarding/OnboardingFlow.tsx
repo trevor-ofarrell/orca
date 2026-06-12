@@ -54,7 +54,7 @@ const stepCopy = {
     get subtitle() {
       return translate(
         'auto.components.onboarding.OnboardingFlow.ff92d15436',
-        'Orca will notify you know when agents are done or need help.'
+        'Orca will notify you when agents are done or need help.'
       )
     }
   },

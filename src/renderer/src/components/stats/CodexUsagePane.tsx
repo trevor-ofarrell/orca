@@ -45,10 +45,18 @@ const SCOPE_OPTIONS: { value: CodexUsageScope; label: string }[] = [
   }
 ]
 const RANGE_LABELS: Record<CodexUsageRange, string> = {
-  '7d': 'Last 7 days',
-  '30d': 'Last 30 days',
-  '90d': 'Last 90 days',
-  all: 'All time'
+  get '7d'() {
+    return translate('auto.components.stats.CodexUsagePane.rangeLast7Days', 'Last 7 days')
+  },
+  get '30d'() {
+    return translate('auto.components.stats.CodexUsagePane.rangeLast30Days', 'Last 30 days')
+  },
+  get '90d'() {
+    return translate('auto.components.stats.CodexUsagePane.rangeLast90Days', 'Last 90 days')
+  },
+  get all() {
+    return translate('auto.components.stats.CodexUsagePane.rangeAllTime', 'All time')
+  }
 }
 
 export function CodexUsagePane(): React.JSX.Element {

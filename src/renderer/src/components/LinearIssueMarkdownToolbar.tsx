@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react'
 import type { Editor } from '@tiptap/react'
+import { useTranslation } from 'react-i18next'
 import {
   Bold,
   Code,
@@ -94,6 +95,8 @@ export function LinearIssueMarkdownToolbar({
   editor: Editor | null
   disabled: boolean
 }): React.JSX.Element {
+  // Why: this toolbar can outlive editor recreation, so subscribe directly to language changes.
+  useTranslation()
   const runCommand = useCallback(
     (command: (editor: Editor) => void) => {
       if (!editor || disabled) {
