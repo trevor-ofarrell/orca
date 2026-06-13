@@ -3357,6 +3357,21 @@ export default function TaskPage(): React.JSX.Element {
   const selectedLinearIssue = selectedLinearIssueId
     ? (cachedSelectedLinearIssue ?? selectedLinearIssueFallback)
     : null
+  const linearDetailSourceContext = useMemo(() => {
+    if (
+      selectedLinearIssue &&
+      pageData.openLinearSourceContext?.provider === 'linear' &&
+      pageData.openLinearIssue?.id === selectedLinearIssue.id
+    ) {
+      return pageData.openLinearSourceContext
+    }
+    return linearTaskSourceContext
+  }, [
+    linearTaskSourceContext,
+    pageData.openLinearIssue,
+    pageData.openLinearSourceContext,
+    selectedLinearIssue
+  ])
 
   const setSelectedLinearIssue = useCallback(
     (issue: LinearIssue | null, options?: { allowOutsideList?: boolean }) => {
@@ -3384,11 +3399,15 @@ export default function TaskPage(): React.JSX.Element {
   const openLinearDetailPage = useCallback(
     (issue: LinearIssue) => {
       openTaskPage(
-        { taskSource: 'linear', openLinearIssue: issue },
+        {
+          taskSource: 'linear',
+          openLinearIssue: issue,
+          openLinearSourceContext: linearTaskSourceContext
+        },
         { recordTasksInteraction: false }
       )
     },
-    [openTaskPage]
+    [linearTaskSourceContext, openTaskPage]
   )
 
   const openRelatedLinearIssue = useCallback(
@@ -3417,7 +3436,8 @@ export default function TaskPage(): React.JSX.Element {
         openGitHubWorkItem: undefined,
         openGitHubSourceContext: undefined,
         openGitHubInitialTab: undefined,
-        openLinearIssue: undefined
+        openLinearIssue: undefined,
+        openLinearSourceContext: undefined
       }
     }))
   }, [clearSelectedLinearIssue, setDialogWorkItem])
@@ -9063,7 +9083,7 @@ export default function TaskPage(): React.JSX.Element {
               onUse={handleUseLinearItem}
               onOpenIssue={openRelatedLinearIssue}
               onClose={closeTaskDetailPage}
-              sourceContext={linearTaskSourceContext}
+              sourceContext={linearDetailSourceContext}
             />
           ) : !linearStatusReady ? (
             <div className="mt-4 flex items-center justify-center py-14">

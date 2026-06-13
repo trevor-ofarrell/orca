@@ -1429,6 +1429,39 @@ describe('createUISlice settings navigation', () => {
     )
   })
 
+  it('prefetches direct Linear task opens with their source context', () => {
+    const store = createUIStore()
+    const prefetchLinearIssues = vi.fn()
+    const linearIssue = makeLinearIssue()
+    const sourceContext: TaskSourceContext = {
+      kind: 'task-source',
+      provider: 'linear',
+      projectId: 'project-1',
+      hostId: 'runtime:remote-server',
+      providerIdentity: { provider: 'linear', workspaceId: 'workspace-1' }
+    }
+
+    store.setState({
+      settings: {
+        visibleTaskProviders: ['linear'],
+        defaultTaskSource: 'linear'
+      } as unknown as AppState['settings'],
+      linearStatus: { connected: true } as AppState['linearStatus'],
+      prefetchLinearIssues
+    } as unknown as Partial<AppState>)
+
+    store.getState().openTaskPage({
+      taskSource: 'linear',
+      openLinearIssue: linearIssue,
+      openLinearSourceContext: sourceContext
+    })
+
+    expect(prefetchLinearIssues).toHaveBeenCalledWith(
+      { kind: 'list', filter: 'all', limit: expect.any(Number) },
+      { sourceContext }
+    )
+  })
+
   it('returns to the tasks page after visiting settings from an in-progress draft', () => {
     const store = createUIStore()
 
@@ -1611,6 +1644,31 @@ describe('createUISlice page navigation history', () => {
       workItem,
       sourceContext,
       initialTab: undefined
+    })
+  })
+
+  it('preserves Linear task detail source context in navigation history', () => {
+    const store = createUIStore()
+    const linearIssue = makeLinearIssue()
+    const sourceContext: TaskSourceContext = {
+      kind: 'task-source',
+      provider: 'linear',
+      projectId: 'project-1',
+      hostId: 'runtime:remote-server',
+      providerIdentity: { provider: 'linear', workspaceId: 'workspace-1' }
+    }
+
+    store.getState().openTaskPage({
+      taskSource: 'linear',
+      openLinearIssue: linearIssue,
+      openLinearSourceContext: sourceContext
+    })
+
+    expect(store.getState().worktreeNavHistory.at(-1)).toEqual({
+      kind: 'task-detail',
+      source: 'linear',
+      issue: linearIssue,
+      sourceContext
     })
   })
 

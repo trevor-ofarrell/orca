@@ -606,6 +606,7 @@ export type UISlice = {
     openGitHubSourceContext?: TaskSourceContext | null
     openGitHubInitialTab?: 'conversation' | 'checks' | 'files'
     openLinearIssue?: LinearIssue
+    openLinearSourceContext?: TaskSourceContext | null
   }
   taskResumeState: TaskResumeState | undefined
   setTaskResumeState: (updates: Partial<TaskResumeState>) => void
@@ -1108,7 +1109,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
         ? ({
             kind: 'task-detail',
             source: 'linear',
-            issue: data.openLinearIssue
+            issue: data.openLinearIssue,
+            sourceContext: data.openLinearSourceContext
           } as const)
         : null
     const currentEntry = get().worktreeNavHistory[get().worktreeNavHistoryIndex]
@@ -1191,16 +1193,24 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     if (resolvedSource === 'linear' && typeof state.prefetchLinearIssues === 'function') {
       const resume = state.taskResumeState
       const query = (resume?.linearQuery ?? '').trim()
+      const sourceContext =
+        data.openLinearSourceContext?.provider === 'linear' ? data.openLinearSourceContext : null
       if (query) {
-        state.prefetchLinearIssues({ kind: 'search', query, limit: LINEAR_TASK_PREFETCH_LIMIT })
+        state.prefetchLinearIssues(
+          { kind: 'search', query, limit: LINEAR_TASK_PREFETCH_LIMIT },
+          { sourceContext }
+        )
       } else {
         // Why: TaskPage no longer exposes Linear preset filters; keep warm
         // prefetch aligned with the default unsearched issue list.
-        state.prefetchLinearIssues({
-          kind: 'list',
-          filter: 'all',
-          limit: LINEAR_TASK_PREFETCH_LIMIT
-        })
+        state.prefetchLinearIssues(
+          {
+            kind: 'list',
+            filter: 'all',
+            limit: LINEAR_TASK_PREFETCH_LIMIT
+          },
+          { sourceContext }
+        )
       }
     }
   },
