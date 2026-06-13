@@ -3706,7 +3706,11 @@ export default function TaskPage(): React.JSX.Element {
   const cachedSelectedJiraIssue = findTaskPageJiraIssue(
     jiraCacheSnapshot.issueCache,
     jiraCacheSnapshot.searchCache,
-    selectedJiraIssueKey
+    selectedJiraIssueKey,
+    {
+      sourceContext: jiraTaskSourceContext,
+      siteId: selectedJiraIssueFallback?.siteId ?? pageData.openJiraIssue?.siteId ?? null
+    }
   )
   const selectedJiraIssue = selectedJiraIssueKey
     ? (cachedSelectedJiraIssue ?? selectedJiraIssueFallback)
@@ -4888,10 +4892,14 @@ export default function TaskPage(): React.JSX.Element {
           findTaskPageJiraIssue(
             jiraCacheSnapshot.issueCache,
             jiraCacheSnapshot.searchCache,
-            issue.key
+            issue.key,
+            {
+              sourceContext: jiraTaskSourceContext,
+              siteId: issue.siteId
+            }
           ) ?? issue
       ),
-    [jiraIssues, jiraCacheSnapshot.issueCache, jiraCacheSnapshot.searchCache]
+    [jiraIssues, jiraCacheSnapshot.issueCache, jiraCacheSnapshot.searchCache, jiraTaskSourceContext]
   )
 
   // New Linear project dialog state
