@@ -87,12 +87,16 @@ function getRepoBackedTaskSourceSummary(args: {
   const identityLabels = uniqueLabels(
     contexts.map((context) => getProviderIdentityLabel(context.providerIdentity))
   )
+  const accountLabels = uniqueLabels(contexts.map((context) => context.accountLabel))
   const repoCount = args.selectedRepoCount ?? contexts.length
   const hostLabel = hostLabels.length === 0 ? 'No host' : formatShortList(hostLabels)
+  const accountLabel = accountLabels.length > 0 ? `Account: ${formatLongList(accountLabels)}` : null
   const targetLabel =
-    repoCount > 1
-      ? `${repoCount} projects`
-      : (identityLabels[0] ?? contexts[0]?.accountLabel ?? 'Selected project')
+    accountLabels.length > 1
+      ? formatShortList(accountLabels)
+      : repoCount > 1
+        ? `${repoCount} projects`
+        : (identityLabels[0] ?? contexts[0]?.accountLabel ?? 'Selected project')
   const titleParts = [
     args.providerLabel,
     hostLabels.length > 0 ? `Host: ${formatLongList(hostLabels)}` : null,
@@ -101,6 +105,7 @@ function getRepoBackedTaskSourceSummary(args: {
           unavailableHosts.map((host) => `${host.hostLabel} ${host.statusLabel}`)
         )}`
       : null,
+    accountLabel,
     identityLabels.length > 0 ? `Source: ${formatLongList(identityLabels)}` : null,
     repoCount > 1 ? `${repoCount} selected projects` : null
   ].filter((part): part is string => Boolean(part))

@@ -27,6 +27,41 @@ describe('task source context summary', () => {
     expect(summary.title).toBe('GitHub · Host: devbox · Source: stablyai/orca')
   })
 
+  it('shows repo-backed provider account labels when accounts can differ by host', () => {
+    const summary = getTaskSourceContextSummary({
+      provider: 'github',
+      providerLabel: 'GitHub',
+      selectedRepoCount: 2,
+      repoContexts: [
+        {
+          kind: 'task-source',
+          provider: 'github',
+          projectId: 'github:stablyai/orca',
+          hostId: 'local',
+          projectHostSetupId: 'setup-local',
+          repoId: 'repo-local',
+          providerIdentity: { provider: 'github', owner: 'stablyai', repo: 'orca' },
+          accountLabel: 'personal-gh'
+        },
+        {
+          kind: 'task-source',
+          provider: 'github',
+          projectId: 'github:stablyai/orca',
+          hostId: 'ssh:builder',
+          projectHostSetupId: 'setup-builder',
+          repoId: 'repo-builder',
+          providerIdentity: { provider: 'github', owner: 'stablyai', repo: 'orca' },
+          accountLabel: 'work-gh'
+        }
+      ]
+    })
+
+    expect(summary.label).toBe('GitHub · Local Mac, builder · personal-gh, work-gh')
+    expect(summary.title).toBe(
+      'GitHub · Host: Local Mac, builder · Account: personal-gh, work-gh · Source: stablyai/orca · 2 selected projects'
+    )
+  })
+
   it('shows disconnected source-host availability for a single SSH repo source', () => {
     const summary = getTaskSourceContextSummary({
       provider: 'github',
