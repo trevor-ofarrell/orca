@@ -33,7 +33,10 @@ const {
   setMigrationUnsupportedPtyMock,
   clearMigrationUnsupportedPtyMock,
   clearMigrationUnsupportedPtysForPaneKeyMock,
-  clearPaneKeyAliasesForPtyMock
+  clearPaneKeyAliasesForPtyMock,
+  getMainWindowByIdMock,
+  getMainWindowForWebContentsMock,
+  getMainWindowsMock
 } = vi.hoisted(() => ({
   handleMock: vi.fn(),
   onMock: vi.fn(),
@@ -63,7 +66,10 @@ const {
   setMigrationUnsupportedPtyMock: vi.fn(),
   clearMigrationUnsupportedPtyMock: vi.fn(),
   clearMigrationUnsupportedPtysForPaneKeyMock: vi.fn(),
-  clearPaneKeyAliasesForPtyMock: vi.fn()
+  clearPaneKeyAliasesForPtyMock: vi.fn(),
+  getMainWindowByIdMock: vi.fn(),
+  getMainWindowForWebContentsMock: vi.fn(),
+  getMainWindowsMock: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -143,6 +149,19 @@ vi.mock('../agent-hooks/migration-unsupported-pty-state', () => ({
   setMigrationUnsupportedPty: setMigrationUnsupportedPtyMock,
   clearMigrationUnsupportedPty: clearMigrationUnsupportedPtyMock,
   clearMigrationUnsupportedPtysForPaneKey: clearMigrationUnsupportedPtysForPaneKeyMock
+}))
+
+vi.mock('../window/main-window-registry', () => ({
+  getMainWindowById: getMainWindowByIdMock,
+  getMainWindowForWebContents: getMainWindowForWebContentsMock,
+  getMainWindows: getMainWindowsMock,
+  sendToWindow: (
+    window: {
+      webContents: { send: (channel: string, ...args: unknown[]) => void }
+    },
+    channel: string,
+    ...args: unknown[]
+  ) => window.webContents.send(channel, ...args)
 }))
 import { LocalPtyProvider } from '../providers/local-pty-provider'
 import { makePaneKey } from '../../shared/stable-pane-id'
@@ -256,6 +275,10 @@ describe('registerPtyHandlers', () => {
     clearMigrationUnsupportedPtyMock.mockReset()
     clearMigrationUnsupportedPtysForPaneKeyMock.mockReset()
     clearPaneKeyAliasesForPtyMock.mockReset()
+    getMainWindowByIdMock.mockReset()
+    getMainWindowForWebContentsMock.mockReset()
+    getMainWindowsMock.mockReset()
+    getMainWindowsMock.mockReturnValue([mainWindow])
     mainWindow.webContents.on.mockReset()
     mainWindow.webContents.send.mockReset()
 
@@ -631,12 +654,16 @@ describe('registerPtyHandlers', () => {
     })
 
     it('surfaces ORCA_APP_VERSION as TERM_PROGRAM_VERSION for TUI feature gating', async () => {
-      const env = await spawnAndGetEnv(undefined, { ORCA_APP_VERSION: '1.2.3-test' })
+      const env = await spawnAndGetEnv(undefined, {
+        ORCA_APP_VERSION: '1.2.3-test'
+      })
       expect(env.TERM_PROGRAM_VERSION).toBe('1.2.3-test')
     })
 
     it('falls back to a placeholder version when ORCA_APP_VERSION is unset', async () => {
-      const env = await spawnAndGetEnv(undefined, { ORCA_APP_VERSION: undefined })
+      const env = await spawnAndGetEnv(undefined, {
+        ORCA_APP_VERSION: undefined
+      })
       expect(env.TERM_PROGRAM_VERSION).toBe('0.0.0-dev')
     })
 
@@ -648,7 +675,9 @@ describe('registerPtyHandlers', () => {
 
     it('injects the OpenCode hook env into Orca terminal PTYs', async () => {
       // Why: clear any ambient OPENCODE_CONFIG_DIR so the mock's value is used
-      const env = await spawnAndGetEnv(undefined, { OPENCODE_CONFIG_DIR: undefined })
+      const env = await spawnAndGetEnv(undefined, {
+        OPENCODE_CONFIG_DIR: undefined
+      })
       expect(openCodeBuildPtyEnvMock).toHaveBeenCalledTimes(1)
       expect(openCodeBuildPtyEnvMock.mock.calls[0]?.[0]).toEqual(expect.any(String))
       expect(env.ORCA_OPENCODE_HOOK_PORT).toBe('4567')
@@ -751,7 +780,9 @@ describe('registerPtyHandlers', () => {
     })
 
     it('injects the Pi agent overlay env into Orca terminal PTYs', async () => {
-      const env = await spawnAndGetEnv(undefined, { PI_CODING_AGENT_DIR: '/tmp/user-pi-agent' })
+      const env = await spawnAndGetEnv(undefined, {
+        PI_CODING_AGENT_DIR: '/tmp/user-pi-agent'
+      })
       expect(piBuildPtyEnvMock).toHaveBeenCalledWith(expect.any(String), '/tmp/user-pi-agent', 'pi')
       expect(piBuildPtyEnvMock).toHaveBeenCalledWith(expect.any(String), undefined, 'omp')
       expect(env.PI_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
@@ -958,7 +989,11 @@ describe('registerPtyHandlers', () => {
     })
 
     it('prepends git/gh attribution shims for daemon-backed local PTYs', async () => {
-      const daemonSpawn = vi.fn(async (options) => ({ id: 'daemon-pty', pid: 123, ...options }))
+      const daemonSpawn = vi.fn(async (options) => ({
+        id: 'daemon-pty',
+        pid: 123,
+        ...options
+      }))
       setLocalPtyProvider({
         spawn: daemonSpawn,
         write: vi.fn(),
@@ -1135,7 +1170,9 @@ describe('registerPtyHandlers', () => {
       })
 
       it('mirrors a user-provided OPENCODE_CONFIG_DIR into a per-PTY overlay on the daemon path', async () => {
-        const env = await daemonSpawnAndGetEnv({ OPENCODE_CONFIG_DIR: '/user/custom/opencode' })
+        const env = await daemonSpawnAndGetEnv({
+          OPENCODE_CONFIG_DIR: '/user/custom/opencode'
+        })
         // Why: OpenCode loads config from a single dir, so the user's path is
         // mirrored into a per-PTY overlay rather than passed through literally.
         expect(openCodeBuildPtyEnvMock).toHaveBeenCalledWith(
@@ -1162,7 +1199,9 @@ describe('registerPtyHandlers', () => {
       })
 
       it('injects Pi overlay env (PI_CODING_AGENT_DIR) on the daemon path', async () => {
-        const env = await daemonSpawnAndGetEnv({ PI_CODING_AGENT_DIR: '/user/.pi/agent' })
+        const env = await daemonSpawnAndGetEnv({
+          PI_CODING_AGENT_DIR: '/user/.pi/agent'
+        })
         // Why: asserts the overlay key was passed through — the id is the
         // daemon-assigned sessionId minted in pty.ts, and the mock returns
         // the fixed overlay path from the shared setup.
@@ -1325,7 +1364,12 @@ describe('registerPtyHandlers', () => {
         registerPtyHandlers(mainWindow as never, runtime as never)
         const controller = runtime.setPtyController.mock.calls[0]?.[0] as RuntimeSpawnController
 
-        await controller.spawn({ cols: 80, rows: 24, worktreeId: 'wt-runtime', env: {} })
+        await controller.spawn({
+          cols: 80,
+          rows: 24,
+          worktreeId: 'wt-runtime',
+          env: {}
+        })
 
         const spawnOptions = daemonSpawn.mock.calls.at(-1)?.[0] as DaemonSpawnCall
         expect(spawnOptions.env.ORCA_CLAUDE_AGENT_STATUS_SETTINGS).toBeUndefined()
@@ -1911,7 +1955,10 @@ describe('registerPtyHandlers', () => {
 
         try {
           await expect(
-            handlers.get('pty:kill')!(null, { id: 'remote-pty', keepHistory: false })
+            handlers.get('pty:kill')!(null, {
+              id: 'remote-pty',
+              keepHistory: false
+            })
           ).rejects.toThrow('Multiplexer disposed')
         } finally {
           deletePtyOwnership('remote-pty')
@@ -1972,7 +2019,9 @@ describe('registerPtyHandlers', () => {
         expect(controller.kill('remote-pty')).toBe(true)
         await Promise.resolve()
 
-        expect(shutdown).toHaveBeenCalledWith('remote-pty', { immediate: false })
+        expect(shutdown).toHaveBeenCalledWith('remote-pty', {
+          immediate: false
+        })
         expect(store.markSshRemotePtyLease).toHaveBeenCalledWith(
           'ssh-1',
           'remote-pty',
@@ -2049,7 +2098,9 @@ describe('registerPtyHandlers', () => {
         expect(controller.kill('ssh:ssh-1@@relay-pty')).toBe(true)
         await Promise.resolve()
 
-        expect(shutdown).toHaveBeenCalledWith('ssh:ssh-1@@relay-pty', { immediate: false })
+        expect(shutdown).toHaveBeenCalledWith('ssh:ssh-1@@relay-pty', {
+          immediate: false
+        })
         expect(localShutdown).not.toHaveBeenCalled()
         expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'relay-pty', 'terminated')
       })
@@ -2570,7 +2621,11 @@ describe('registerPtyHandlers', () => {
     expect(sshListProcesses).toHaveBeenCalled()
     expect(sessions).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ cwd: '/remote', id: 'remote-pty', title: 'ssh-shell' })
+        expect.objectContaining({
+          cwd: '/remote',
+          id: 'remote-pty',
+          title: 'ssh-shell'
+        })
       ])
     )
 
@@ -2820,7 +2875,11 @@ describe('registerPtyHandlers', () => {
 
     expect(() => listenerFor('pty:write')(null, { id: 'remote-pty', data: 'x' })).not.toThrow()
     expect(() =>
-      listenerFor('pty:resize')(null, { id: 'remote-pty', cols: 100, rows: 30 })
+      listenerFor('pty:resize')(null, {
+        id: 'remote-pty',
+        cols: 100,
+        rows: 30
+      })
     ).not.toThrow()
     expect(() => listenerFor('pty:ackColdRestore')(null, { id: 'remote-pty' })).not.toThrow()
     expect(() =>
@@ -2962,7 +3021,10 @@ describe('registerPtyHandlers', () => {
     const spawned = await resizeController.spawn({ cols: 80, rows: 24 })
 
     expect(resizeController.resize(spawned.id, 120, 30)).toBe(false)
-    expect(resizeController.getSize(spawned.id)).toEqual({ cols: 80, rows: 24 })
+    expect(resizeController.getSize(spawned.id)).toEqual({
+      cols: 80,
+      rows: 24
+    })
   })
 
   it('persists runtime-owned headless session bindings when explicitly requested', async () => {
@@ -3193,7 +3255,10 @@ describe('registerPtyHandlers', () => {
       }): Promise<{ id: string; isReattach?: boolean }>
     }
     registerSshPtyProvider('ssh-reattach-ok', {
-      spawn: vi.fn(async () => ({ id: 'ssh:ssh-reattach-ok@@relay-pty', isReattach: true })),
+      spawn: vi.fn(async () => ({
+        id: 'ssh:ssh-reattach-ok@@relay-pty',
+        isReattach: true
+      })),
       write: vi.fn(),
       resize: vi.fn(),
       shutdown: vi.fn(),
@@ -3396,7 +3461,10 @@ describe('registerPtyHandlers', () => {
     const remoteShutdown = vi.fn()
     const remoteWrite = vi.fn()
     registerSshPtyProvider('ssh-reattach-fail', {
-      spawn: vi.fn(async () => ({ id: 'ssh:ssh-reattach-fail@@relay-pty', isReattach: true })),
+      spawn: vi.fn(async () => ({
+        id: 'ssh:ssh-reattach-fail@@relay-pty',
+        isReattach: true
+      })),
       write: remoteWrite,
       resize: vi.fn(),
       shutdown: remoteShutdown,
@@ -3656,7 +3724,9 @@ describe('registerPtyHandlers', () => {
         })
       ).rejects.toThrow(/ORCA_TERMINAL_SESSION_STATE_SAVE_FAILED/)
 
-      expect(remoteShutdown).toHaveBeenCalledWith(appPtyId, { immediate: true })
+      expect(remoteShutdown).toHaveBeenCalledWith(appPtyId, {
+        immediate: true
+      })
       expect(store.upsertSshRemotePtyLease).not.toHaveBeenCalled()
       expect(store.removeSshRemotePtyLease).not.toHaveBeenCalled()
       expect(openCodeClearPtyMock).toHaveBeenCalledWith(appPtyId)
@@ -3989,7 +4059,11 @@ describe('registerPtyHandlers', () => {
             terminalWindowsPowerShellImplementation: 'pwsh.exe'
           }) as never
       )
-      await handlers.get('pty:spawn')!(null, { cols: 80, rows: 24, shellOverride: 'pwsh.exe' })
+      await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        shellOverride: 'pwsh.exe'
+      })
 
       expect(spawnMock).toHaveBeenCalledWith(
         'powershell.exe',
@@ -4037,7 +4111,9 @@ describe('registerPtyHandlers', () => {
       )
       await handlers.get('pty:spawn')!(null, { cols: 80, rows: 24 })
 
-      const spawnOptions = spawnMock.mock.calls.at(-1)?.[2] as { env: Record<string, string> }
+      const spawnOptions = spawnMock.mock.calls.at(-1)?.[2] as {
+        env: Record<string, string>
+      }
       expect(spawnMock).toHaveBeenCalledWith('wsl.exe', expect.any(Array), expect.any(Object))
       expect(spawnOptions.env.CODEX_HOME).toBeUndefined()
       expect(spawnOptions.env.ORCA_CODEX_HOME).toBeUndefined()
@@ -4063,7 +4139,9 @@ describe('registerPtyHandlers', () => {
         shellOverride: 'wsl.exe'
       })
 
-      const spawnOptions = spawnMock.mock.calls.at(-1)?.[2] as { env: Record<string, string> }
+      const spawnOptions = spawnMock.mock.calls.at(-1)?.[2] as {
+        env: Record<string, string>
+      }
       expect(spawnMock).toHaveBeenCalledWith('wsl.exe', expect.any(Array), expect.any(Object))
       expect(spawnOptions.env.CODEX_HOME).toBeUndefined()
       expect(spawnOptions.env.ORCA_CODEX_HOME).toBeUndefined()
@@ -4365,6 +4443,55 @@ describe('registerPtyHandlers', () => {
       })
       vi.advanceTimersByTime(8)
       expect(mainWindow.webContents.send).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resolves the PTY owner once for an immediate interactive output chunk', async () => {
+    vi.useFakeTimers()
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+    const ownerWindow = {
+      id: 1,
+      isDestroyed: () => false,
+      webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+    }
+    const runtime = {
+      setPtyController: vi.fn(),
+      onPtySpawned: vi.fn(),
+      onPtyData: vi.fn(() => undefined),
+      getPtyOutputSequence: vi.fn(() => undefined),
+      getDriver: vi.fn(() => ({ kind: 'desktop' })),
+      preAllocateHandleForPty: vi.fn(() => 'term-owner-lookup-count'),
+      registerPreAllocatedHandleForPty: vi.fn(),
+      registerPtyOwnerWindow: vi.fn(),
+      resolveOwnerWindowIdForPtyId: vi.fn(() => 1)
+    }
+    getMainWindowForWebContentsMock.mockReturnValue(ownerWindow)
+    getMainWindowByIdMock.mockReturnValue(ownerWindow)
+
+    try {
+      registerPtyHandlers(ownerWindow as never, runtime as never)
+      const spawnResult = (await handlers.get('pty:spawn')!(
+        { sender: ownerWindow.webContents },
+        {
+          cols: 80,
+          rows: 24,
+          cwd: '/tmp'
+        }
+      )) as { id: string }
+      const writeListener = getPtyWriteListener()
+      writeListener({ sender: ownerWindow.webContents }, { id: spawnResult.id, data: 'a' })
+      runtime.resolveOwnerWindowIdForPtyId.mockClear()
+
+      mockProc.emitData('\x1b[20;2Hredraw')
+
+      expect(runtime.resolveOwnerWindowIdForPtyId).toHaveBeenCalledTimes(1)
+      expect(ownerWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+        id: spawnResult.id,
+        data: '\x1b[20;2Hredraw'
+      })
     } finally {
       vi.useRealTimers()
     }
@@ -5078,7 +5205,10 @@ describe('registerPtyHandlers', () => {
   })
 
   it('seeds headless terminal state with cold-restore cwd metadata', async () => {
-    const coldRestore = { scrollback: 'restored history\r\n', cwd: '/projects/restored' }
+    const coldRestore = {
+      scrollback: 'restored history\r\n',
+      cwd: '/projects/restored'
+    }
     setLocalPtyProvider({
       spawn: vi.fn(async () => ({ id: 'pty-cold-restore', coldRestore })),
       write: vi.fn(),
@@ -5110,6 +5240,64 @@ describe('registerPtyHandlers', () => {
       undefined,
       { cwd: '/projects/restored' }
     )
+  })
+
+  it('rejects PTY write and resize IPC from non-owner windows', async () => {
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+    const ownerWindow = {
+      id: 1,
+      isDestroyed: () => false,
+      webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+    }
+    const otherWindow = {
+      id: 2,
+      isDestroyed: () => false,
+      webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+    }
+    getMainWindowForWebContentsMock.mockImplementation((sender) => {
+      if (sender === ownerWindow.webContents) {
+        return ownerWindow
+      }
+      if (sender === otherWindow.webContents) {
+        return otherWindow
+      }
+      return null
+    })
+    const runtime = {
+      resolveOwnerWindowIdForPtyId: vi.fn(() => 1),
+      getDriver: vi.fn(() => ({ kind: 'desktop' })),
+      isResizeSuppressed: vi.fn(() => false),
+      onExternalPtyResize: vi.fn(),
+      onPtySpawned: vi.fn(),
+      preAllocateHandleForPty: vi.fn(() => 'term-owned-sender-test'),
+      registerPreAllocatedHandleForPty: vi.fn(),
+      registerPtyOwnerWindow: vi.fn(),
+      setPtyController: vi.fn()
+    }
+
+    registerPtyHandlers(ownerWindow as never, runtime as never)
+    const result = (await handlers.get('pty:spawn')!(
+      { sender: ownerWindow.webContents },
+      { cols: 80, rows: 24 }
+    )) as { id: string }
+    const write = onMock.mock.calls.find((entry: unknown[]) => entry[0] === 'pty:write')?.[1] as
+      | ((event: unknown, args: unknown) => void)
+      | undefined
+    const resize = onMock.mock.calls.find((entry: unknown[]) => entry[0] === 'pty:resize')?.[1] as
+      | ((event: unknown, args: unknown) => void)
+      | undefined
+
+    write?.({ sender: otherWindow.webContents }, { id: result.id, data: 'blocked' })
+    resize?.({ sender: otherWindow.webContents }, { id: result.id, cols: 120, rows: 40 })
+    expect(mockProc.proc.write).not.toHaveBeenCalled()
+    expect(mockProc.proc.resize).not.toHaveBeenCalled()
+
+    write?.({ sender: ownerWindow.webContents }, { id: result.id, data: 'allowed' })
+    resize?.({ sender: ownerWindow.webContents }, { id: result.id, cols: 100, rows: 30 })
+    expect(mockProc.proc.write).toHaveBeenCalledWith('allowed')
+    expect(mockProc.proc.resize).toHaveBeenCalledWith(100, 30)
+    expect(runtime.onExternalPtyResize).toHaveBeenCalledWith(result.id, 100, 30)
   })
 
   it('upgrades legacy numeric pane keys when the spawn metadata proves the stable leaf', async () => {
@@ -5423,6 +5611,67 @@ describe('registerPtyHandlers', () => {
     )
   })
 
+  it('cleans up only the reloaded window PTYs while multiple windows are open', async () => {
+    const ownerKillSpy = vi.fn()
+    const otherKillSpy = vi.fn()
+    const ownerProc = {
+      onData: vi.fn(() => makeDisposable()),
+      onExit: vi.fn(() => makeDisposable()),
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: ownerKillSpy,
+      process: 'zsh',
+      pid: 12345
+    }
+    const otherProc = {
+      onData: vi.fn(() => makeDisposable()),
+      onExit: vi.fn(() => makeDisposable()),
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: otherKillSpy,
+      process: 'zsh',
+      pid: 12346
+    }
+    const ownerWindow = {
+      id: 1,
+      isDestroyed: () => false,
+      webContents: {
+        on: vi.fn(),
+        send: vi.fn(),
+        removeListener: vi.fn()
+      }
+    }
+    const otherWindow = { id: 2, isDestroyed: () => false }
+    const runtime = {
+      setPtyController: vi.fn(),
+      onPtySpawned: vi.fn(),
+      onPtyExit: vi.fn(),
+      preAllocateHandleForPty: vi.fn(),
+      resolvePtyIdsForOwnerWindow: vi.fn()
+    }
+    spawnMock.mockReturnValueOnce(ownerProc).mockReturnValueOnce(otherProc)
+    getMainWindowsMock.mockReturnValue([ownerWindow, otherWindow])
+
+    registerPtyHandlers(ownerWindow as never, runtime as never)
+    const didFinishLoad = ownerWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'did-finish-load'
+    )?.[1] as (() => void) | undefined
+    expect(didFinishLoad).toBeTypeOf('function')
+    const ownerResult = (await handlers.get('pty:spawn')!(null, {
+      cols: 80,
+      rows: 24
+    })) as { id: string }
+    await handlers.get('pty:spawn')!(null, { cols: 80, rows: 24 })
+    runtime.resolvePtyIdsForOwnerWindow.mockReturnValue([ownerResult.id])
+
+    didFinishLoad?.()
+    didFinishLoad?.()
+
+    expect(ownerKillSpy).toHaveBeenCalledTimes(1)
+    expect(otherKillSpy).not.toHaveBeenCalled()
+    expect(runtime.resolvePtyIdsForOwnerWindow).toHaveBeenCalledWith(1)
+  })
+
   it('removes the previous orphan-cleanup listener from its original webContents', () => {
     const firstWindow = {
       isDestroyed: () => false,
@@ -5469,6 +5718,468 @@ describe('registerPtyHandlers', () => {
     ).toBe(false)
   })
 
+  it('scopes PTY metadata reads to the owning window', async () => {
+    const ownerWindow = {
+      id: 1,
+      isDestroyed: () => false,
+      webContents: {
+        on: vi.fn(),
+        send: vi.fn(),
+        removeListener: vi.fn()
+      }
+    }
+    const otherWindow = {
+      id: 2,
+      isDestroyed: () => false,
+      webContents: {
+        on: vi.fn(),
+        send: vi.fn(),
+        removeListener: vi.fn()
+      }
+    }
+    const provider = {
+      spawn: vi.fn(),
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      shutdown: vi.fn(),
+      onData: vi.fn(() => vi.fn()),
+      onExit: vi.fn(() => vi.fn()),
+      listProcesses: vi.fn(async () => []),
+      hasChildProcesses: vi.fn(async () => true),
+      getForegroundProcess: vi.fn(async () => 'node'),
+      getCwd: vi.fn(async () => '/repo/owned')
+    }
+    const runtime = {
+      setPtyController: vi.fn(),
+      resolveOwnerWindowIdForPtyId: vi.fn((ptyId: string) => (ptyId === 'pty-owned' ? 1 : null))
+    }
+    getMainWindowForWebContentsMock.mockImplementation((webContents) => {
+      if (webContents === ownerWindow.webContents) {
+        return ownerWindow
+      }
+      if (webContents === otherWindow.webContents) {
+        return otherWindow
+      }
+      return null
+    })
+    setLocalPtyProvider(provider as never)
+    setPtyOwnership('pty-owned', null)
+    registerPtyHandlers(ownerWindow as never, runtime as never)
+
+    await expect(
+      handlers.get('pty:hasChildProcesses')!(
+        { sender: otherWindow.webContents },
+        { id: 'pty-owned' }
+      )
+    ).resolves.toBe(false)
+    await expect(
+      handlers.get('pty:getForegroundProcess')!(
+        { sender: otherWindow.webContents },
+        { id: 'pty-owned' }
+      )
+    ).resolves.toBeNull()
+    await expect(
+      handlers.get('pty:getCwd')!({ sender: otherWindow.webContents }, { id: 'pty-owned' })
+    ).resolves.toBe('')
+    expect(provider.hasChildProcesses).not.toHaveBeenCalled()
+    expect(provider.getForegroundProcess).not.toHaveBeenCalled()
+    expect(provider.getCwd).not.toHaveBeenCalled()
+
+    await expect(
+      handlers.get('pty:hasChildProcesses')!(
+        { sender: ownerWindow.webContents },
+        { id: 'pty-owned' }
+      )
+    ).resolves.toBe(true)
+    await expect(
+      handlers.get('pty:getForegroundProcess')!(
+        { sender: ownerWindow.webContents },
+        { id: 'pty-owned' }
+      )
+    ).resolves.toBe('node')
+    await expect(
+      handlers.get('pty:getCwd')!({ sender: ownerWindow.webContents }, { id: 'pty-owned' })
+    ).resolves.toBe('/repo/owned')
+    deletePtyOwnership('pty-owned')
+  })
+
+  it('sends PTY output to the owning window after another window registers handlers', () => {
+    vi.useFakeTimers()
+    try {
+      let onData: ((payload: { id: string; data: string }) => void) | undefined
+      const firstWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        webContents: {
+          on: vi.fn(),
+          send: vi.fn(),
+          removeListener: vi.fn()
+        }
+      }
+      const secondWindow = {
+        id: 2,
+        isDestroyed: () => false,
+        webContents: {
+          on: vi.fn(),
+          send: vi.fn(),
+          removeListener: vi.fn()
+        }
+      }
+      const runtime = {
+        setPtyController: vi.fn(),
+        onPtyData: vi.fn(() => undefined),
+        onPtyExit: vi.fn(),
+        resolveOwnerWindowIdForPtyId: vi.fn((ptyId: string) => (ptyId === 'pty-a' ? 1 : null))
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) =>
+        windowId === 1 ? firstWindow : null
+      )
+      setLocalPtyProvider({
+        spawn: vi.fn(),
+        write: vi.fn(),
+        resize: vi.fn(),
+        kill: vi.fn(),
+        shutdown: vi.fn(),
+        onData: vi.fn((listener) => {
+          onData = listener
+          return vi.fn()
+        }),
+        onExit: vi.fn(() => vi.fn()),
+        listProcesses: vi.fn(async () => []),
+        getForegroundProcess: vi.fn(async () => null)
+      } as never)
+
+      registerPtyHandlers(firstWindow as never, runtime as never)
+      registerPtyHandlers(secondWindow as never, runtime as never)
+      onData?.({ id: 'pty-a', data: 'owned output' })
+      vi.advanceTimersByTime(8)
+
+      expect(firstWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+        id: 'pty-a',
+        data: 'owned output'
+      })
+      expect(secondWindow.webContents.send).not.toHaveBeenCalledWith('pty:data', expect.anything())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not read webContents for a destroyed PTY owner window', () => {
+    vi.useFakeTimers()
+    try {
+      let onData: ((payload: { id: string; data: string }) => void) | undefined
+      const ownerWindow = {
+        id: 1,
+        isDestroyed: () => true,
+        get webContents() {
+          throw new Error('Object has been destroyed')
+        }
+      }
+      const runtime = {
+        setPtyController: vi.fn(),
+        onPtyData: vi.fn(() => undefined),
+        onPtyExit: vi.fn(),
+        resolveOwnerWindowIdForPtyId: vi.fn(() => 1)
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) =>
+        windowId === 1 ? ownerWindow : null
+      )
+      setLocalPtyProvider({
+        spawn: vi.fn(),
+        write: vi.fn(),
+        resize: vi.fn(),
+        kill: vi.fn(),
+        shutdown: vi.fn(),
+        onData: vi.fn((listener) => {
+          onData = listener
+          return vi.fn()
+        }),
+        onExit: vi.fn(() => vi.fn()),
+        listProcesses: vi.fn(async () => []),
+        getForegroundProcess: vi.fn(async () => null)
+      } as never)
+
+      registerPtyHandlers(ownerWindow as never, runtime as never)
+
+      expect(() => onData?.({ id: 'pty-a', data: 'owned output' })).not.toThrow()
+      expect(() => vi.advanceTimersByTime(2_100)).not.toThrow()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let ownerless PTY output clear pending output for an owned PTY', () => {
+    vi.useFakeTimers()
+    try {
+      let onData: ((payload: { id: string; data: string }) => void) | undefined
+      const ownerWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        webContents: {
+          on: vi.fn(),
+          send: vi.fn(),
+          removeListener: vi.fn()
+        }
+      }
+      const runtime = {
+        setPtyController: vi.fn(),
+        onPtyData: vi.fn(() => undefined),
+        onPtyExit: vi.fn(),
+        resolveOwnerWindowIdForPtyId: vi.fn((ptyId: string) => (ptyId === 'pty-owned' ? 1 : null))
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) =>
+        windowId === 1 ? ownerWindow : null
+      )
+      setLocalPtyProvider({
+        spawn: vi.fn(),
+        write: vi.fn(),
+        resize: vi.fn(),
+        kill: vi.fn(),
+        shutdown: vi.fn(),
+        onData: vi.fn((listener) => {
+          onData = listener
+          return vi.fn()
+        }),
+        onExit: vi.fn(() => vi.fn()),
+        listProcesses: vi.fn(async () => []),
+        getForegroundProcess: vi.fn(async () => null)
+      } as never)
+
+      registerPtyHandlers(ownerWindow as never, runtime as never)
+      onData?.({ id: 'pty-owned', data: 'owned output' })
+      onData?.({ id: 'pty-ownerless', data: 'early output' })
+      vi.advanceTimersByTime(8)
+
+      expect(ownerWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+        id: 'pty-owned',
+        data: 'owned output'
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('delivers ownerless PTY output when ownership appears before the retry expires', () => {
+    vi.useFakeTimers()
+    try {
+      let ownerWindowId: number | null = null
+      let onData: ((payload: { id: string; data: string }) => void) | undefined
+      const ownerWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        webContents: {
+          on: vi.fn(),
+          send: vi.fn(),
+          removeListener: vi.fn()
+        }
+      }
+      const runtime = {
+        setPtyController: vi.fn(),
+        onPtyData: vi.fn(() => undefined),
+        onPtyExit: vi.fn(),
+        resolveOwnerWindowIdForPtyId: vi.fn(() => ownerWindowId)
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) =>
+        windowId === 1 ? ownerWindow : null
+      )
+      setLocalPtyProvider({
+        spawn: vi.fn(),
+        write: vi.fn(),
+        resize: vi.fn(),
+        kill: vi.fn(),
+        shutdown: vi.fn(),
+        onData: vi.fn((listener) => {
+          onData = listener
+          return vi.fn()
+        }),
+        onExit: vi.fn(() => vi.fn()),
+        listProcesses: vi.fn(async () => []),
+        getForegroundProcess: vi.fn(async () => null)
+      } as never)
+
+      registerPtyHandlers(ownerWindow as never, runtime as never)
+      onData?.({ id: 'pty-late', data: 'startup output' })
+      vi.advanceTimersByTime(7)
+      expect(ownerWindow.webContents.send).not.toHaveBeenCalledWith('pty:data', expect.anything())
+
+      ownerWindowId = 1
+      vi.advanceTimersByTime(1)
+
+      expect(ownerWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+        id: 'pty-late',
+        data: 'startup output'
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('delivers ownerless PTY exit when ownership appears before the retry expires', () => {
+    vi.useFakeTimers()
+    try {
+      let ownerWindowId: number | null = null
+      let onData: ((payload: { id: string; data: string }) => void) | undefined
+      let onExit: ((payload: { id: string; code: number }) => void) | undefined
+      const ownerWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        webContents: {
+          on: vi.fn(),
+          send: vi.fn(),
+          removeListener: vi.fn()
+        }
+      }
+      const runtime = {
+        setPtyController: vi.fn(),
+        onPtyData: vi.fn(() => undefined),
+        onPtyExit: vi.fn(),
+        resolveOwnerWindowIdForPtyId: vi.fn(() => ownerWindowId)
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) =>
+        windowId === 1 ? ownerWindow : null
+      )
+      setLocalPtyProvider({
+        spawn: vi.fn(),
+        write: vi.fn(),
+        resize: vi.fn(),
+        kill: vi.fn(),
+        shutdown: vi.fn(),
+        onData: vi.fn((listener) => {
+          onData = listener
+          return vi.fn()
+        }),
+        onExit: vi.fn((listener) => {
+          onExit = listener
+          return vi.fn()
+        }),
+        listProcesses: vi.fn(async () => []),
+        getForegroundProcess: vi.fn(async () => null)
+      } as never)
+
+      registerPtyHandlers(ownerWindow as never, runtime as never)
+      onData?.({ id: 'pty-late', data: 'last output' })
+      onExit?.({ id: 'pty-late', code: 0 })
+      vi.advanceTimersByTime(7)
+      expect(ownerWindow.webContents.send).not.toHaveBeenCalledWith('pty:data', expect.anything())
+      expect(ownerWindow.webContents.send).not.toHaveBeenCalledWith('pty:exit', expect.anything())
+
+      ownerWindowId = 1
+      vi.advanceTimersByTime(1)
+
+      expect(ownerWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+        id: 'pty-late',
+        data: 'last output'
+      })
+      expect(ownerWindow.webContents.send).toHaveBeenCalledWith('pty:exit', {
+        id: 'pty-late',
+        code: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('blocks signal and kill requests from non-owning windows', async () => {
+    const ownerWindow = {
+      id: 1,
+      isDestroyed: () => false,
+      webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+    }
+    const otherWindow = {
+      id: 2,
+      isDestroyed: () => false,
+      webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+    }
+    const sendSignal = vi.fn(async () => undefined)
+    const shutdown = vi.fn(async () => undefined)
+    const runtime = {
+      setPtyController: vi.fn(),
+      onPtyData: vi.fn(() => undefined),
+      onPtyExit: vi.fn(),
+      resolveOwnerWindowIdForPtyId: vi.fn(() => 1)
+    }
+    getMainWindowByIdMock.mockImplementation((windowId: number) =>
+      windowId === 1 ? ownerWindow : null
+    )
+    getMainWindowForWebContentsMock.mockImplementation((sender) =>
+      sender === otherWindow.webContents ? otherWindow : ownerWindow
+    )
+    setLocalPtyProvider({
+      spawn: vi.fn(),
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      shutdown,
+      sendSignal,
+      onData: vi.fn(() => vi.fn()),
+      onExit: vi.fn(() => vi.fn()),
+      listProcesses: vi.fn(async () => []),
+      getForegroundProcess: vi.fn(async () => null)
+    } as never)
+
+    registerPtyHandlers(ownerWindow as never, runtime as never)
+    setPtyOwnership('pty-owned', null)
+    const signal = onMock.mock.calls.find((entry: unknown[]) => entry[0] === 'pty:signal')?.[1] as
+      | ((event: unknown, args: { id: string; signal: string }) => void)
+      | undefined
+
+    signal?.({ sender: otherWindow.webContents }, { id: 'pty-owned', signal: 'SIGINT' })
+    await handlers.get('pty:kill')!({ sender: otherWindow.webContents }, { id: 'pty-owned' })
+
+    expect(sendSignal).not.toHaveBeenCalled()
+    expect(shutdown).not.toHaveBeenCalled()
+  })
+
+  it('stamps renderer-spawned PTYs with the sender window owner after another window registers handlers', async () => {
+    const firstWindow = {
+      id: 1,
+      isDestroyed: () => false,
+      webContents: {
+        on: vi.fn(),
+        send: vi.fn(),
+        removeListener: vi.fn()
+      }
+    }
+    const secondWindow = {
+      id: 2,
+      isDestroyed: () => false,
+      webContents: {
+        on: vi.fn(),
+        send: vi.fn(),
+        removeListener: vi.fn()
+      }
+    }
+    const runtime = {
+      setPtyController: vi.fn(),
+      preAllocateHandleForPty: vi.fn(() => 'term-owned'),
+      registerPreAllocatedHandleForPty: vi.fn(),
+      registerPty: vi.fn(),
+      registerPtyOwnerWindow: vi.fn(),
+      onPtySpawned: vi.fn(),
+      onPtyExit: vi.fn(),
+      onPtyData: vi.fn()
+    }
+
+    registerPtyHandlers(firstWindow as never, runtime as never)
+    registerPtyHandlers(secondWindow as never, runtime as never)
+    getMainWindowForWebContentsMock.mockImplementation((sender) =>
+      sender === firstWindow.webContents ? firstWindow : null
+    )
+
+    await handlers.get('pty:spawn')!(
+      { sender: firstWindow.webContents },
+      {
+        cols: 80,
+        rows: 24,
+        env: {},
+        worktreeId: 'wt-1'
+      }
+    )
+
+    expect(runtime.registerPtyOwnerWindow).toHaveBeenCalledWith(expect.any(String), 1)
+  })
+
   it('clears PTY state even when kill reports the process is already gone', async () => {
     const proc = {
       onData: vi.fn(() => makeDisposable()),
@@ -5491,7 +6202,11 @@ describe('registerPtyHandlers', () => {
 
     await handlers.get('pty:kill')!(null, { id: spawnResult.id })
 
-    expect(await handlers.get('pty:hasChildProcesses')!(null, { id: spawnResult.id })).toBe(false)
+    expect(
+      await handlers.get('pty:hasChildProcesses')!(null, {
+        id: spawnResult.id
+      })
+    ).toBe(false)
     expect(openCodeClearPtyMock).toHaveBeenCalledWith(spawnResult.id)
     expect(piClearPtyMock).toHaveBeenCalledWith(spawnResult.id)
   })
@@ -5583,17 +6298,30 @@ describe('registerPtyHandlers', () => {
       _event: unknown,
       args: {
         requestId?: string
-        snapshot?: { data?: unknown; cols?: unknown; rows?: unknown; lastTitle?: unknown } | null
+        snapshot?: {
+          data?: unknown
+          cols?: unknown
+          rows?: unknown
+          lastTitle?: unknown
+        } | null
       }
     ) => void
     type SerializeController = {
       serializeBuffer: (
         ptyId: string,
         opts?: { scrollbackRows?: number; altScreenForcesZeroRows?: boolean }
-      ) => Promise<{ data: string; cols: number; rows: number; lastTitle?: string } | null>
+      ) => Promise<{
+        data: string
+        cols: number
+        rows: number
+        lastTitle?: string
+      } | null>
     }
 
-    function setup(): { listener: SerializeListener; controller: SerializeController } {
+    function setup(): {
+      listener: SerializeListener
+      controller: SerializeController
+    } {
       const runtime = {
         setPtyController: vi.fn(),
         onPtySpawned: vi.fn(),
@@ -5675,6 +6403,58 @@ describe('registerPtyHandlers', () => {
       })
     })
 
+    it('sends serialize requests to the PTY owner and accepts replies only from that window', async () => {
+      const ownerWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        webContents: {
+          on: vi.fn(),
+          send: vi.fn(),
+          removeListener: vi.fn()
+        }
+      }
+      const runtime = {
+        setPtyController: vi.fn(),
+        resolveOwnerWindowIdForPtyId: vi.fn((ptyId: string) => (ptyId === 'pty-owned' ? 1 : null))
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) =>
+        windowId === 1 ? ownerWindow : null
+      )
+      handlers.clear()
+      registerPtyHandlers(mainWindow as never, runtime as never)
+      const listener = onMock.mock.calls.find(
+        (call: unknown[]) => call[0] === 'pty:serializeBuffer:response'
+      )?.[1] as SerializeListener | undefined
+      expect(listener).toBeTypeOf('function')
+      const controller = runtime.setPtyController.mock.calls[0]?.[0] as SerializeController
+
+      const pending = controller.serializeBuffer('pty-owned')
+      const request = ownerWindow.webContents.send.mock.calls.find(
+        (call: unknown[]) => call[0] === 'pty:serializeBuffer:request'
+      )?.[1] as { requestId: string }
+
+      expect(request.requestId).toBeTruthy()
+      expect(mainWindow.webContents.send).not.toHaveBeenCalledWith(
+        'pty:serializeBuffer:request',
+        expect.anything()
+      )
+
+      listener?.({ sender: mainWindow.webContents } as never, {
+        requestId: request.requestId,
+        snapshot: { data: 'wrong', cols: 1, rows: 1 }
+      })
+      listener?.({ sender: ownerWindow.webContents } as never, {
+        requestId: request.requestId,
+        snapshot: { data: 'owned', cols: 80, rows: 24 }
+      })
+
+      await expect(pending).resolves.toEqual({
+        data: 'owned',
+        cols: 80,
+        rows: 24
+      })
+    })
+
     it('ignores responses with unknown requestId without affecting pending requests', async () => {
       const { listener, controller } = setup()
       const pending = controller.serializeBuffer('pty-1')
@@ -5693,8 +6473,15 @@ describe('registerPtyHandlers', () => {
       await new Promise((r) => setTimeout(r, 0))
       expect(resolved).toBe(false)
 
-      listener(null, { requestId: realRequestId, snapshot: { data: 'ok', cols: 80, rows: 24 } })
-      await expect(pending).resolves.toEqual({ data: 'ok', cols: 80, rows: 24 })
+      listener(null, {
+        requestId: realRequestId,
+        snapshot: { data: 'ok', cols: 80, rows: 24 }
+      })
+      await expect(pending).resolves.toEqual({
+        data: 'ok',
+        cols: 80,
+        rows: 24
+      })
     })
 
     it('resolves to null and removes the entry when the 750ms timeout fires', async () => {
@@ -5713,7 +6500,10 @@ describe('registerPtyHandlers', () => {
       const { listener, controller } = setup()
       const pending = controller.serializeBuffer('pty-bad')
       const requestId = getSentRequestIds()[0]
-      listener(null, { requestId, snapshot: { data: 'ok', cols: 'not-a-number' } })
+      listener(null, {
+        requestId,
+        snapshot: { data: 'ok', cols: 'not-a-number' }
+      })
       await expect(pending).resolves.toBeNull()
     })
   })

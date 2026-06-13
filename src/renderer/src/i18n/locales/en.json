@@ -57,7 +57,8 @@
     "zoomOut": "Zoom Out",
     "openWorktreePalette": "Open Worktree Palette",
     "window": "Window",
-    "help": "Help"
+    "help": "Help",
+    "newWindow": "New Window"
   },
   "worktreeJumpPalette": {
     "matchLabel": {
@@ -4532,7 +4533,15 @@
           "f63ea281e3": "Threaded left-sidebar feed for agent completions and blocking states.",
           "ca2219fe5e": "Shows a small animated pet pinned to the bottom-right corner. Pick a character (Claudino, OpenCode, Gremlin) or upload your own PNG, APNG, GIF, WebP, JPG, or SVG from the status-bar pet menu. Hide it any time from the same menu without disabling this setting.",
           "dd6f0a1d45": "Pet",
-          "0e89a574ae": "Floating animated pet in the bottom-right corner."
+          "0e89a574ae": "Floating animated pet in the bottom-right corner.",
+          "efc5cd3ad7": "Multi-window",
+          "9403a2fffb": "Enable File > New Window for multiple monitor workflows. Requires restart.",
+          "73d191586e": "Adds File > New Window for multiple monitor workflows. Requires restart.",
+          "31d6d8d7b4": "Restart required",
+          "45513cd4aa": "Orca applies multi-window support at startup.",
+          "c709b5448c": "Restart",
+          "847886cf3e": "Smart New Tab menu",
+          "523b819a55": "Type in the New Tab menu to open a terminal, launch an agent, visit a URL, or open/create a file."
         },
         "FloatingWorkspacePane": {
           "aeaf76fda9": "Status Bar",
@@ -6533,7 +6542,9 @@
             "b54cea709b": "sidekick",
             "051203d37c": "pet",
             "6b5a56ac35": "Floating animated pet in the bottom-right corner.",
-            "87d99e634b": "Pet"
+            "87d99e634b": "Pet",
+            "4f0b2bb8d1": "Smart New Tab menu",
+            "818dac284f": "Multi-window"
           }
         },
         "floating": {

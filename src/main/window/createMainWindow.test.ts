@@ -47,7 +47,12 @@ vi.mock('../browser/browser-manager', () => ({
   }
 }))
 
-import { createMainWindow, loadMainWindow } from './createMainWindow'
+import {
+  closeWindowAfterConfirmation,
+  createMainWindow,
+  loadMainWindow,
+  requestWindowCloseForQuit
+} from './createMainWindow'
 import { ipcMain } from 'electron'
 
 describe('createMainWindow', () => {
@@ -103,6 +108,255 @@ describe('createMainWindow', () => {
 
     expect(browserWindowInstance.loadFile).toHaveBeenCalledTimes(1)
     expect(browserWindowInstance.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('collects quit confirmations without closing the window immediately', () => {
+    const windowHandlers: Record<string, (...args: any[]) => void> = {}
+    const webContents = {
+      id: 42,
+      on: vi.fn((event, handler) => {
+        windowHandlers[event] = handler
+      }),
+      setZoomLevel: vi.fn(),
+      setBackgroundThrottling: vi.fn(),
+      invalidate: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      send: vi.fn(),
+      isDevToolsOpened: vi.fn(),
+      openDevTools: vi.fn(),
+      closeDevTools: vi.fn()
+    }
+    const browserWindowInstance = {
+      webContents,
+      on: vi.fn((event, handler) => {
+        windowHandlers[event] = handler
+      }),
+      close: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      isMaximized: vi.fn(() => false),
+      isFullScreen: vi.fn(() => false),
+      getSize: vi.fn(() => [1200, 800]),
+      setSize: vi.fn(),
+      maximize: vi.fn(),
+      show: vi.fn(),
+      loadFile: vi.fn(),
+      loadURL: vi.fn()
+    }
+    browserWindowMock.mockImplementation(function () {
+      return browserWindowInstance
+    })
+    const onQuitWindowCloseConfirmed = vi.fn()
+
+    const win = createMainWindow(null, {
+      deferLoad: true,
+      getIsQuitting: () => true,
+      isQuitConfirmationCollecting: () => true,
+      onQuitWindowCloseConfirmed
+    })
+    const onConfirmClose = vi
+      .mocked(ipcMain.on)
+      .mock.calls.filter(([channel]) => channel === 'window:confirm-close')
+      .at(-1)?.[1] as (event: Electron.IpcMainEvent) => void
+
+    onConfirmClose({ sender: webContents } as never)
+
+    expect(onQuitWindowCloseConfirmed).toHaveBeenCalledWith(win)
+    expect(browserWindowInstance.close).not.toHaveBeenCalled()
+
+    closeWindowAfterConfirmation(win)
+
+    expect(browserWindowInstance.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores stale quit confirmations after the app quit transaction aborts', () => {
+    const windowHandlers: Record<string, (...args: any[]) => void> = {}
+    let isQuitting = true
+    const webContents = {
+      id: 42,
+      on: vi.fn((event, handler) => {
+        windowHandlers[event] = handler
+      }),
+      setZoomLevel: vi.fn(),
+      setBackgroundThrottling: vi.fn(),
+      invalidate: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      send: vi.fn(),
+      isCrashed: vi.fn(() => false),
+      isDevToolsOpened: vi.fn(),
+      openDevTools: vi.fn(),
+      closeDevTools: vi.fn()
+    }
+    const browserWindowInstance = {
+      webContents,
+      on: vi.fn((event, handler) => {
+        windowHandlers[event] = handler
+      }),
+      close: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      isMaximized: vi.fn(() => false),
+      isFullScreen: vi.fn(() => false),
+      getSize: vi.fn(() => [1200, 800]),
+      setSize: vi.fn(),
+      maximize: vi.fn(),
+      show: vi.fn(),
+      loadFile: vi.fn(),
+      loadURL: vi.fn()
+    }
+    browserWindowMock.mockImplementation(function () {
+      return browserWindowInstance
+    })
+
+    createMainWindow(null, {
+      deferLoad: true,
+      getIsQuitting: () => isQuitting,
+      isQuitConfirmationCollecting: () => false
+    })
+    windowHandlers.close({ preventDefault: vi.fn() } as never)
+    isQuitting = false
+    const onConfirmClose = vi
+      .mocked(ipcMain.on)
+      .mock.calls.filter(([channel]) => channel === 'window:confirm-close')
+      .at(-1)?.[1] as (event: Electron.IpcMainEvent) => void
+
+    onConfirmClose({ sender: webContents } as never)
+
+    expect(browserWindowInstance.close).not.toHaveBeenCalled()
+  })
+
+  it('uses the app-quit close request latch to ignore stale confirmations', () => {
+    let isQuitting = true
+    const webContents = {
+      id: 42,
+      on: vi.fn(),
+      setZoomLevel: vi.fn(),
+      setBackgroundThrottling: vi.fn(),
+      invalidate: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      send: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      isCrashed: vi.fn(() => false),
+      isDevToolsOpened: vi.fn(),
+      openDevTools: vi.fn(),
+      closeDevTools: vi.fn()
+    }
+    const browserWindowInstance = {
+      webContents,
+      on: vi.fn(),
+      close: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      isMaximized: vi.fn(() => false),
+      isFullScreen: vi.fn(() => false),
+      getSize: vi.fn(() => [1200, 800]),
+      setSize: vi.fn(),
+      maximize: vi.fn(),
+      show: vi.fn(),
+      loadFile: vi.fn(),
+      loadURL: vi.fn()
+    }
+    browserWindowMock.mockImplementation(function () {
+      return browserWindowInstance
+    })
+
+    const win = createMainWindow(null, {
+      deferLoad: true,
+      getIsQuitting: () => isQuitting,
+      isQuitConfirmationCollecting: () => false
+    })
+
+    expect(requestWindowCloseForQuit(win)).toBe(true)
+    expect(webContents.send).toHaveBeenCalledWith('window:close-requested', { isQuitting: true })
+
+    isQuitting = false
+    const onConfirmClose = vi
+      .mocked(ipcMain.on)
+      .mock.calls.filter(([channel]) => channel === 'window:confirm-close')
+      .at(-1)?.[1] as (event: Electron.IpcMainEvent) => void
+
+    onConfirmClose({ sender: webContents } as never)
+
+    expect(browserWindowInstance.close).not.toHaveBeenCalled()
+  })
+
+  it('does not request app-quit confirmation from a crashed renderer', () => {
+    const webContents = {
+      id: 42,
+      on: vi.fn(),
+      setZoomLevel: vi.fn(),
+      setBackgroundThrottling: vi.fn(),
+      invalidate: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      send: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      isCrashed: vi.fn(() => true),
+      isDevToolsOpened: vi.fn(),
+      openDevTools: vi.fn(),
+      closeDevTools: vi.fn()
+    }
+    const browserWindowInstance = {
+      webContents,
+      on: vi.fn(),
+      close: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      isMaximized: vi.fn(() => false),
+      isFullScreen: vi.fn(() => false),
+      getSize: vi.fn(() => [1200, 800]),
+      setSize: vi.fn(),
+      maximize: vi.fn(),
+      show: vi.fn(),
+      loadFile: vi.fn(),
+      loadURL: vi.fn()
+    }
+    browserWindowMock.mockImplementation(function () {
+      return browserWindowInstance
+    })
+
+    const win = createMainWindow(null, { deferLoad: true })
+
+    expect(requestWindowCloseForQuit(win)).toBe(false)
+    expect(webContents.send).not.toHaveBeenCalledWith('window:close-requested', expect.anything())
+  })
+
+  it('does not inspect crashed state when app-quit confirmation targets a destroyed renderer', () => {
+    const webContents = {
+      id: 42,
+      on: vi.fn(),
+      setZoomLevel: vi.fn(),
+      setBackgroundThrottling: vi.fn(),
+      invalidate: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      send: vi.fn(),
+      isDestroyed: vi.fn(() => true),
+      isCrashed: vi.fn(() => {
+        throw new Error('Object has been destroyed')
+      }),
+      isDevToolsOpened: vi.fn(),
+      openDevTools: vi.fn(),
+      closeDevTools: vi.fn()
+    }
+    const browserWindowInstance = {
+      webContents,
+      on: vi.fn(),
+      close: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      isMaximized: vi.fn(() => false),
+      isFullScreen: vi.fn(() => false),
+      getSize: vi.fn(() => [1200, 800]),
+      setSize: vi.fn(),
+      maximize: vi.fn(),
+      show: vi.fn(),
+      loadFile: vi.fn(),
+      loadURL: vi.fn()
+    }
+    browserWindowMock.mockImplementation(function () {
+      return browserWindowInstance
+    })
+
+    const win = createMainWindow(null, { deferLoad: true })
+
+    expect(() => requestWindowCloseForQuit(win)).not.toThrow()
+    expect(requestWindowCloseForQuit(win)).toBe(false)
+    expect(webContents.isCrashed).not.toHaveBeenCalled()
+    expect(webContents.send).not.toHaveBeenCalledWith('window:close-requested', expect.anything())
   })
 
   it('enables renderer sandboxing and opens external links safely', () => {
@@ -1112,7 +1366,7 @@ describe('createMainWindow', () => {
 
     createMainWindow(null, { onRendererProcessGone })
 
-    ipcHandlers['window:confirm-close']?.()
+    ipcHandlers['window:confirm-close']?.({ sender: webContents })
     windowHandlers['render-process-gone']?.(
       {} as never,
       {
@@ -1322,7 +1576,7 @@ describe('createMainWindow', () => {
 
     expect(syncListener).toBeTypeOf('function')
 
-    syncListener?.({} as never, 1.2)
+    syncListener?.({ sender: webContents } as never, 1.2)
 
     if (process.platform === 'darwin') {
       expect(browserWindowInstance.setWindowButtonPosition).toHaveBeenCalledWith({ x: 16, y: 16 })

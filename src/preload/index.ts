@@ -1834,7 +1834,7 @@ const api = {
       worktreeId: string
       sessionProfileId?: string | null
       webContentsId: number
-    }): Promise<void> => ipcRenderer.invoke('browser:registerGuest', args),
+    }): Promise<boolean> => ipcRenderer.invoke('browser:registerGuest', args),
 
     unregisterGuest: (args: { browserPageId: string }): Promise<void> =>
       ipcRenderer.invoke('browser:unregisterGuest', args),
@@ -3178,6 +3178,10 @@ const api = {
     /** Tell the main process to proceed with the window close. */
     confirmWindowClose: (): void => {
       ipcRenderer.send('window:confirm-close')
+    },
+    /** Tell the main process that renderer-side close confirmation was canceled. */
+    cancelWindowClose: (): void => {
+      ipcRenderer.send('window:cancel-close')
     }
   } satisfies PreloadApi['ui'],
 

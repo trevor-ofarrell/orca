@@ -231,6 +231,19 @@ function resolveMobileFloorClientId(
   return null
 }
 
+function assertSenderOwnsTerminal(
+  runtime: OrcaRuntimeService,
+  terminal: string,
+  senderWindowId: number | undefined
+): void {
+  if (
+    senderWindowId !== undefined &&
+    !runtime.senderWindowOwnsTerminalHandle(terminal, senderWindowId)
+  ) {
+    throw new Error('runtime_unavailable')
+  }
+}
+
 function appendPendingMultiplexOutput(
   stream: TerminalMultiplexStream,
   data: string,
@@ -293,7 +306,9 @@ async function serializeBudgetedRequestedSnapshot(
 ): Promise<SerializedSnapshot> {
   const requestedRows = scrollbackRows ?? 0
   for (const rows of requestedSnapshotScrollbackCandidates(scrollbackRows)) {
-    const serialized = await runtime.serializeTerminalBuffer(ptyId, { scrollbackRows: rows })
+    const serialized = await runtime.serializeTerminalBuffer(ptyId, {
+      scrollbackRows: rows
+    })
     if (!serialized) {
       return null
     }
@@ -347,12 +362,16 @@ async function serializeBudgetedMobileSnapshot(
   isMobile: boolean
 ): Promise<SerializedSnapshot> {
   if (!isMobile) {
-    const serialized = await runtime.serializeTerminalBuffer(ptyId, { scrollbackRows: 0 })
+    const serialized = await runtime.serializeTerminalBuffer(ptyId, {
+      scrollbackRows: 0
+    })
     return serialized ? { ...serialized, scrollbackRows: 0, truncatedByByteBudget: false } : null
   }
   const candidates = [MOBILE_SUBSCRIBE_SCROLLBACK_ROWS, 500, 250, 100, 25, 0]
   for (const rows of candidates) {
-    const serialized = await runtime.serializeTerminalBuffer(ptyId, { scrollbackRows: rows })
+    const serialized = await runtime.serializeTerminalBuffer(ptyId, {
+      scrollbackRows: rows
+    })
     if (!serialized) {
       return null
     }
@@ -660,21 +679,26 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.rename',
     params: TerminalRename,
-    handler: async (params, { runtime }) => ({
-      rename: await runtime.renameTerminal(params.terminal, params.title || null)
-    })
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
+      return {
+        rename: await runtime.renameTerminal(params.terminal, params.title || null)
+      }
+    }
   }),
   defineMethod({
     name: 'terminal.clearBuffer',
     params: TerminalHandle,
-    handler: async (params, { runtime }) => ({
-      clear: await runtime.clearTerminalBuffer(params.terminal)
-    })
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
+      return { clear: await runtime.clearTerminalBuffer(params.terminal) }
+    }
   }),
   defineMethod({
     name: 'terminal.send',
     params: TerminalSend,
-    handler: async (params, { runtime }) => {
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
       const leaf = runtime.resolveLeafForHandle(params.terminal)
       const driver = leaf?.ptyId ? runtime.getDriver(leaf.ptyId) : null
       if (leaf?.ptyId && isTerminalInputLockedForClient(runtime, leaf.ptyId, params.client)) {
@@ -733,24 +757,29 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.split',
     params: TerminalSplit,
-    handler: async (params, { runtime }) => ({
-      split: await runtime.splitTerminal(params.terminal, {
-        direction: params.direction,
-        command: params.command,
-        env: params.env,
-        telemetrySource: params.telemetrySource
-      })
-    })
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
+      return {
+        split: await runtime.splitTerminal(params.terminal, {
+          direction: params.direction,
+          command: params.command,
+          env: params.env,
+          telemetrySource: params.telemetrySource
+        })
+      }
+    }
   }),
   defineMethod({
     name: 'terminal.stop',
     params: TerminalStop,
-    handler: async (params, { runtime }) => runtime.stopTerminalsForWorktree(params.worktree)
+    handler: async (params, { runtime, senderWindowId }) =>
+      runtime.stopTerminalsForWorktree(params.worktree, { senderWindowId })
   }),
   defineMethod({
     name: 'terminal.resizeForClient',
     params: TerminalResizeForClient,
-    handler: async (params, { runtime }) => {
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
       const leaf = runtime.resolveLeafForHandle(params.terminal)
       if (!leaf?.ptyId) {
         throw new Error('no_connected_pty')
@@ -773,16 +802,18 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.focus',
     params: TerminalHandle,
-    handler: async (params, { runtime }) => ({
-      focus: await runtime.focusTerminal(params.terminal)
-    })
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
+      return { focus: await runtime.focusTerminal(params.terminal) }
+    }
   }),
   defineMethod({
     name: 'terminal.close',
     params: TerminalHandle,
-    handler: async (params, { runtime }) => ({
-      close: await runtime.closeTerminal(params.terminal)
-    })
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
+      return { close: await runtime.closeTerminal(params.terminal) }
+    }
   }),
   defineMethod({
     name: 'agentTeams.tmuxCompat',
@@ -804,7 +835,8 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.setDisplayMode',
     params: TerminalSetDisplayMode,
-    handler: async (params, { runtime }) => {
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
       const leaf = runtime.resolveLeafForHandle(params.terminal)
       if (!leaf?.ptyId) {
         throw new Error('no_connected_pty')
@@ -826,7 +858,8 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.restoreFit',
     params: TerminalHandle,
-    handler: async (params, { runtime }) => {
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
       const leaf = runtime.resolveLeafForHandle(params.terminal)
       if (!leaf?.ptyId) {
         throw new Error('no_connected_pty')
@@ -847,7 +880,8 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.updateViewport',
     params: TerminalUpdateViewport,
-    handler: async (params, { runtime }) => {
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
       const leaf = runtime.resolveLeafForHandle(params.terminal)
       if (!leaf?.ptyId) {
         throw new Error('no_connected_pty')
@@ -957,7 +991,11 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
             return
           }
           void runtime
-            .sendTerminal(stream.terminal, { text, enter: false, interrupt: false })
+            .sendTerminal(stream.terminal, {
+              text,
+              enter: false,
+              interrupt: false
+            })
             .then(async () => {
               if (stream.isMobile && stream.client?.id) {
                 await runtime.mobileTookFloor(stream.ptyId, stream.client.id)
@@ -967,9 +1005,10 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
           return
         }
         if (frame.opcode === TerminalStreamOpcode.Resize && stream.client) {
-          const viewport = decodeTerminalStreamJson<{ cols?: unknown; rows?: unknown }>(
-            frame.payload
-          )
+          const viewport = decodeTerminalStreamJson<{
+            cols?: unknown
+            rows?: unknown
+          }>(frame.payload)
           if (!viewport || typeof viewport.cols !== 'number' || typeof viewport.rows !== 'number') {
             return
           }
@@ -1435,7 +1474,14 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
         if (closed || !sendBinary) {
           return
         }
-        sendBinary(encodeTerminalStreamFrame({ opcode, streamId, seq: cursor++, payload }))
+        sendBinary(
+          encodeTerminalStreamFrame({
+            opcode,
+            streamId,
+            seq: cursor++,
+            payload
+          })
+        )
       }
       outputBatcher = createTerminalOutputBatcher((data) => {
         for (const chunk of splitTerminalOutputFrameChunks(data)) {
@@ -1456,7 +1502,11 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
               return
             }
             void runtime
-              .sendTerminal(params.terminal, { text, enter: false, interrupt: false })
+              .sendTerminal(params.terminal, {
+                text,
+                enter: false,
+                interrupt: false
+              })
               .then(async () => {
                 if (isMobile && clientId) {
                   await runtime.mobileTookFloor(ptyId, clientId)
@@ -1466,9 +1516,10 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
             return
           }
           if (frame.opcode === TerminalStreamOpcode.Resize && params.client) {
-            const viewport = decodeTerminalStreamJson<{ cols?: unknown; rows?: unknown }>(
-              frame.payload
-            )
+            const viewport = decodeTerminalStreamJson<{
+              cols?: unknown
+              rows?: unknown
+            }>(frame.payload)
             if (
               !viewport ||
               typeof viewport.cols !== 'number' ||

@@ -60,6 +60,12 @@ import { getSshGitProvider } from '../providers/ssh-git-dispatch'
 import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
 import { getSshGitUsername } from '../git/git-username'
 import { getActiveMultiplexer } from './ssh'
+import {
+  broadcastToMainWindows,
+  getMainWindowForWebContents,
+  getMainWindows,
+  sendToWindow
+} from '../window/main-window-registry'
 import { normalizeSparseDirectories } from './sparse-checkout-directories'
 import { track } from '../telemetry/client'
 import { getCohortAtEmit } from '../telemetry/cohort-classifier'
@@ -522,6 +528,9 @@ async function runNestedRepoScanForIpc(
 }
 
 export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): void {
+  const getTargetWindow = (event: IpcMainInvokeEvent): BrowserWindow =>
+    getMainWindowForWebContents(event.sender) ?? mainWindow
+
   // Remove any previously registered handlers so we can re-register them
   // (e.g. when macOS re-activates the app and creates a new window).
   ipcMain.removeHandler('repos:list')
@@ -1455,8 +1464,8 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
     notifySparsePresetsChanged(mainWindow, args.repoId)
   })
 
-  ipcMain.handle('repos:pickFolder', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+  ipcMain.handle('repos:pickFolder', async (event) => {
+    const result = await dialog.showOpenDialog(getTargetWindow(event), {
       properties: ['openDirectory']
     })
     if (result.canceled || result.filePaths.length === 0) {
@@ -1468,8 +1477,8 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   // Why: pickDirectory is a generic "choose a folder" picker, separate from
   // pickFolder which is specifically the "add project" flow. Clone needs a
   // destination directory that may not be a git repo yet.
-  ipcMain.handle('repos:pickDirectory', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+  ipcMain.handle('repos:pickDirectory', async (event) => {
+    const result = await dialog.showOpenDialog(getTargetWindow(event), {
       properties: ['openDirectory', 'createDirectory']
     })
     if (result.canceled || result.filePaths.length === 0) {
@@ -1490,7 +1499,8 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
 
   ipcMain.handle(
     'repos:clone',
-    async (_event, args: { url: string; destination: string }): Promise<Repo> => {
+    async (event, args: { url: string; destination: string }): Promise<Repo> => {
+      const targetWindow = getTargetWindow(event)
       // Why: the user picks a parent directory (e.g. ~/projects) and we derive
       // the repo folder name from the URL (e.g. "orca" from .../orca.git).
       // This matches the default git clone behavior where the last path segment
@@ -1566,8 +1576,8 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
             const lines = text.split(/[\r\n]+/)
             for (const line of lines) {
               const match = line.match(/^([\w\s]+):\s+(\d+)%/)
-              if (match && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('repos:clone-progress', {
+              if (match) {
+                sendToWindow(targetWindow, 'repos:clone-progress', {
                   phase: match[1].trim(),
                   percent: parseInt(match[2], 10)
                 })
@@ -1845,14 +1855,16 @@ async function searchBaseRefDetailsForRepo(
 }
 
 function notifyReposChanged(mainWindow: BrowserWindow): void {
-  if (!mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('repos:changed')
+  broadcastToMainWindows('repos:changed')
+  if (getMainWindows().length === 0 && !mainWindow.isDestroyed()) {
+    sendToWindow(mainWindow, 'repos:changed')
   }
 }
 
 function notifySparsePresetsChanged(mainWindow: BrowserWindow, repoId: string): void {
-  if (!mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('sparsePresets:changed', { repoId })
+  broadcastToMainWindows('sparsePresets:changed', { repoId })
+  if (getMainWindows().length === 0 && !mainWindow.isDestroyed()) {
+    sendToWindow(mainWindow, 'sparsePresets:changed', { repoId })
   }
 }
 

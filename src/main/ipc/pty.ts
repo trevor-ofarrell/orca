@@ -70,6 +70,12 @@ import {
   getFolderWorkspacePathStatus
 } from '../project-groups/folder-workspace-path-status'
 import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
+import {
+  getMainWindowById,
+  getMainWindowForWebContents,
+  getMainWindows,
+  sendToWindow
+} from '../window/main-window-registry'
 
 // ─── Provider Registry ──────────────────────────────────────────────
 // Routes PTY operations by connectionId. null = local provider.
@@ -193,7 +199,10 @@ function registerPendingPaneSerializerCleanup(sender: WebContents | undefined): 
 function declarePendingPaneSerializer(paneKey: string, sender: WebContents | undefined): number {
   const gen = ++pendingSerializerGenSeq
   registerPendingPaneSerializerCleanup(sender)
-  pendingByPaneKey.set(paneKey, { gen, ownerWebContentsId: sender?.id ?? null })
+  pendingByPaneKey.set(paneKey, {
+    gen,
+    ownerWebContentsId: sender?.id ?? null
+  })
   return gen
 }
 
@@ -922,8 +931,7 @@ export function setPtyOwnership(id: string, connectionId: string | null): void {
 // duplicate listeners that forward every event twice.
 let localDataUnsub: (() => void) | null = null
 let localExitUnsub: (() => void) | null = null
-let didFinishLoadHandler: (() => void) | null = null
-let didFinishLoadWebContents: WebContents | null = null
+const didFinishLoadHandlersByWebContents = new Map<WebContents, () => void>()
 
 // Why: the "Restart daemon" path needs to re-bind provider→renderer listeners
 // against the freshly-created adapter after replaceDaemonProvider swaps the
@@ -982,12 +990,11 @@ export function resetPtyRendererDeliveryDebug(): void {
   resetPtyRendererDeliveryDebugSnapshot()
 }
 
-function clearDidFinishLoadHandler(): void {
-  if (didFinishLoadHandler && didFinishLoadWebContents) {
-    didFinishLoadWebContents.removeListener('did-finish-load', didFinishLoadHandler)
+function clearDidFinishLoadHandlers(): void {
+  for (const [webContents, handler] of didFinishLoadHandlersByWebContents) {
+    webContents.removeListener('did-finish-load', handler)
   }
-  didFinishLoadHandler = null
-  didFinishLoadWebContents = null
+  didFinishLoadHandlersByWebContents.clear()
 }
 
 // Why: the "Restart daemon" flow needs to detach listeners from the current
@@ -1117,9 +1124,16 @@ export function registerPtyHandlers(
     data: string
     startSeq?: number
   }
+  type PendingPtyExit = {
+    id: string
+    code: number
+  }
 
   const pendingData = new Map<string, PendingPtyData>()
   const rendererInFlightCharsByPty = new Map<string, number>()
+  const pendingExit = new Map<string, PendingPtyExit>()
+  const earlyProviderExitByPty = new Map<string, number>()
+  const ownerlessPendingDataSinceByPty = new Map<string, number>()
   const trustedTerminalHandleEnv = new Set<string>()
   let flushTimer: ReturnType<typeof setTimeout> | null = null
   let rendererInFlightTotalChars = 0
@@ -1133,6 +1147,8 @@ export function registerPtyHandlers(
   // Why: active panes need a bounded lane through old hidden bulk output so a
   // keystroke redraw can reach the renderer before every background ACK lands.
   const PTY_RENDERER_ACTIVE_PTY_IN_FLIGHT_RESERVE_CHARS = 512 * 1024
+  const OWNERLESS_PTY_OUTPUT_RETRY_MS = 8
+  const OWNERLESS_PTY_OUTPUT_MAX_AGE_MS = 2_000
   // Why: keep the immediate path bounded to keystroke-sized TUI redraws;
   // large output and non-interactive output must still use the batcher.
   const INTERACTIVE_OUTPUT_WINDOW_MS = 100
@@ -1237,12 +1253,79 @@ export function registerPtyHandlers(
     data: string,
     startSeq: number | undefined
   ): { id: string; data: string; seq?: number; rawLength?: number } {
-    const payload: { id: string; data: string; seq?: number; rawLength?: number } = { id, data }
+    const payload: {
+      id: string
+      data: string
+      seq?: number
+      rawLength?: number
+    } = { id, data }
     if (typeof startSeq === 'number') {
       payload.seq = startSeq + data.length
       payload.rawLength = data.length
     }
     return payload
+  }
+
+  function isWindowSendable(window: BrowserWindow): boolean {
+    if (window.isDestroyed()) {
+      return false
+    }
+    const webContentsDestroyed =
+      typeof window.webContents.isDestroyed === 'function' && window.webContents.isDestroyed()
+    return !webContentsDestroyed
+  }
+
+  function getOwnerWindowForPty(ptyId: string): BrowserWindow | null {
+    const canResolveOwner = typeof runtime?.resolveOwnerWindowIdForPtyId === 'function'
+    const ownerWindowId = canResolveOwner ? runtime.resolveOwnerWindowIdForPtyId(ptyId) : null
+    const ownerWindow = ownerWindowId === null ? null : getMainWindowById(ownerWindowId)
+    if (ownerWindow && isWindowSendable(ownerWindow)) {
+      return ownerWindow
+    }
+    if (!canResolveOwner && isWindowSendable(mainWindow)) {
+      return mainWindow
+    }
+    return null
+  }
+
+  function senderOwnsPty(
+    event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent | null,
+    ptyId: string
+  ): boolean {
+    if (!event?.sender) {
+      return typeof runtime?.resolveOwnerWindowIdForPtyId !== 'function'
+    }
+    const senderWindow = getMainWindowForWebContents(event.sender)
+    if (!senderWindow) {
+      return false
+    }
+    const ownerWindowId =
+      typeof runtime?.resolveOwnerWindowIdForPtyId === 'function'
+        ? runtime.resolveOwnerWindowIdForPtyId(ptyId)
+        : null
+    if (ownerWindowId !== null) {
+      return ownerWindowId === senderWindow.id
+    }
+    return (
+      typeof runtime?.resolveOwnerWindowIdForPtyId !== 'function' && senderWindow === mainWindow
+    )
+  }
+
+  function sendToPtyOwnerWindow(
+    target: BrowserWindow | null,
+    channel: string,
+    payload: unknown
+  ): boolean {
+    if (!target || !isWindowSendable(target)) {
+      return false
+    }
+    sendToWindow(target, channel, payload)
+    return true
+  }
+
+  function sendToPtyOwner(ptyId: string, channel: string, payload: unknown): boolean {
+    const target = getOwnerWindowForPty(ptyId)
+    return sendToPtyOwnerWindow(target, channel, payload)
   }
 
   function getPtyPayloadCharCount(payload: { data: string; rawLength?: number }): number {
@@ -1266,13 +1349,17 @@ export function registerPtyHandlers(
 
   function sendPtyDataToRenderer(
     id: string,
-    payload: { id: string; data: string; seq?: number; rawLength?: number }
-  ): void {
+    payload: { id: string; data: string; seq?: number; rawLength?: number },
+    target: BrowserWindow | null = getOwnerWindowForPty(id)
+  ): boolean {
+    if (!sendToPtyOwnerWindow(target, 'pty:data', payload)) {
+      return false
+    }
     const charCount = getPtyPayloadCharCount(payload)
     rendererInFlightCharsByPty.set(id, (rendererInFlightCharsByPty.get(id) ?? 0) + charCount)
     rendererInFlightTotalChars += charCount
     recordPtyRendererDeliveryPressure()
-    mainWindow.webContents.send('pty:data', payload)
+    return true
   }
 
   function getPendingPtyFlushEntries(): [string, PendingPtyData][] {
@@ -1315,21 +1402,36 @@ export function registerPtyHandlers(
 
   function flushPendingData(): void {
     flushTimer = null
-    if (mainWindow.isDestroyed()) {
-      pendingData.clear()
-      rendererInFlightCharsByPty.clear()
-      rendererInFlightTotalChars = 0
-      recordPtyRendererDeliveryPressure()
-      return
-    }
     let writes = 0
+    let deferredOwnerlessDeliveries = 0
+    let ackBlocked = false
     for (const [id, pending] of getPendingPtyFlushEntries()) {
       if (writes >= PTY_BATCH_FLUSH_MAX_WRITES) {
         break
       }
-      if (!canSendPtyDataToRenderer(id, { interactive: activeRendererPtys.has(id) })) {
+      if (
+        !canSendPtyDataToRenderer(id, {
+          interactive: activeRendererPtys.has(id)
+        })
+      ) {
+        ackBlocked = true
         continue
       }
+      const ownerWindow = getOwnerWindowForPty(id)
+      if (!ownerWindow) {
+        const now = performance.now()
+        const since = ownerlessPendingDataSinceByPty.get(id) ?? now
+        ownerlessPendingDataSinceByPty.set(id, since)
+        if (now - since <= OWNERLESS_PTY_OUTPUT_MAX_AGE_MS) {
+          deferredOwnerlessDeliveries += 1
+          continue
+        }
+        pendingData.delete(id)
+        pendingExit.delete(id)
+        ownerlessPendingDataSinceByPty.delete(id)
+        continue
+      }
+      ownerlessPendingDataSinceByPty.delete(id)
       pendingData.delete(id)
       const { data } = pending
       const chunk = data.slice(0, PTY_BATCH_FLUSH_CHUNK_CHARS)
@@ -1341,26 +1443,67 @@ export function registerPtyHandlers(
         }
         pendingData.set(id, nextPending)
       }
-      sendPtyDataToRenderer(id, makePtyDataPayload(id, chunk, pending.startSeq))
+      sendPtyDataToRenderer(id, makePtyDataPayload(id, chunk, pending.startSeq), ownerWindow)
+      const exit = pendingExit.get(id)
+      if (exit && !pendingData.has(id)) {
+        pendingExit.delete(id)
+        sendToPtyOwnerWindow(ownerWindow, 'pty:exit', exit)
+      }
       writes++
     }
-    if (pendingData.size > 0 && writes === 0) {
+    for (const [id, exit] of pendingExit.entries()) {
+      if (pendingData.has(id)) {
+        continue
+      }
+      const ownerWindow = getOwnerWindowForPty(id)
+      if (!ownerWindow) {
+        const now = performance.now()
+        const since = ownerlessPendingDataSinceByPty.get(id) ?? now
+        ownerlessPendingDataSinceByPty.set(id, since)
+        if (now - since > OWNERLESS_PTY_OUTPUT_MAX_AGE_MS) {
+          pendingExit.delete(id)
+          ownerlessPendingDataSinceByPty.delete(id)
+        } else {
+          deferredOwnerlessDeliveries += 1
+        }
+        continue
+      }
+      pendingExit.delete(id)
+      ownerlessPendingDataSinceByPty.delete(id)
+      sendToPtyOwnerWindow(ownerWindow, 'pty:exit', exit)
+    }
+    if (pendingData.size > 0 && writes === 0 && ackBlocked) {
       ackGatedFlushSkipCount++
     }
     recordPtyRendererDeliveryPressure()
-    if (pendingData.size > 0 && writes > 0) {
-      // Why: a background terminal can dump megabytes at once. Yield between
-      // small IPC slices so keystroke writes are not stuck behind one flush.
-      schedulePendingDataFlush(PTY_BATCH_DRAIN_CONTINUE_MS)
+    if (pendingData.size > 0 || pendingExit.size > 0) {
+      if (deferredOwnerlessDeliveries > 0) {
+        // Why: daemon/SSH output can arrive before the renderer publishes its
+        // owner graph; retry briefly, but do not route by focus.
+        schedulePendingDataFlush(OWNERLESS_PTY_OUTPUT_RETRY_MS)
+      } else if (writes > 0) {
+        // Why: a background terminal can dump megabytes at once. Yield between
+        // small IPC slices so keystroke writes are not stuck behind one flush.
+        schedulePendingDataFlush(PTY_BATCH_DRAIN_CONTINUE_MS)
+      }
     }
   }
 
   const clearFlushTimerIfIdle = (): void => {
-    if (pendingData.size > 0 || flushTimer === null) {
+    if (pendingData.size > 0 || pendingExit.size > 0 || flushTimer === null) {
       return
     }
     clearTimeout(flushTimer)
     flushTimer = null
+  }
+
+  function replayEarlyProviderExit(ptyId: string): void {
+    const earlyExitCode = earlyProviderExitByPty.get(ptyId)
+    if (earlyExitCode === undefined) {
+      return
+    }
+    earlyProviderExitByPty.delete(ptyId)
+    runtime?.onPtyExit(ptyId, earlyExitCode)
   }
 
   // Why: extracted so the "Restart daemon" flow can rebind against the fresh
@@ -1384,22 +1527,21 @@ export function registerPtyHandlers(
         ? runtime?.getPtyOutputSequence(payload.id)
         : runtime?.onPtyData(payload.id, payload.data, Date.now())
       const startSeq = getChunkStartSeq(outputSeq, payload.data)
-      if (mainWindow.isDestroyed()) {
-        // Why: clear the pending flush timer so it doesn't fire after the window
-        // is gone. Without this, macOS app re-activation leaks orphaned timers
-        // from the previous window's registration.
-        if (flushTimer) {
-          clearTimeout(flushTimer)
-          flushTimer = null
-        }
-        pendingData.clear()
-        rendererInFlightCharsByPty.clear()
-        rendererInFlightTotalChars = 0
-        recordPtyRendererDeliveryPressure()
-        return
-      }
       const existing = pendingData.get(payload.id)
       const pending = appendPendingPtyData(existing, payload.data, startSeq)
+      const ownerWindow = getOwnerWindowForPty(payload.id)
+      if (!ownerWindow) {
+        // Why: daemon-backed PTYs can produce startup bytes before their
+        // renderer graph owner is published; wait briefly for ownership.
+        ownerlessPendingDataSinceByPty.set(
+          payload.id,
+          ownerlessPendingDataSinceByPty.get(payload.id) ?? performance.now()
+        )
+        pendingData.set(payload.id, pending)
+        schedulePendingDataFlush(OWNERLESS_PTY_OUTPUT_RETRY_MS)
+        return
+      }
+      ownerlessPendingDataSinceByPty.delete(payload.id)
       const nextData = pending.data
       const isInteractiveOutput = shouldSendInteractiveOutputNow(
         payload.id,
@@ -1419,13 +1561,20 @@ export function registerPtyHandlers(
         clearFlushTimerIfIdle()
         // Why: agent TUIs redraw small prompt regions after every keystroke.
         // Waiting for the throughput batch timer adds visible input latency.
-        sendPtyDataToRenderer(payload.id, {
-          id: payload.id,
-          data: nextData,
-          ...(typeof pending.startSeq === 'number'
-            ? { seq: pending.startSeq + nextData.length, rawLength: nextData.length }
-            : {})
-        })
+        sendPtyDataToRenderer(
+          payload.id,
+          {
+            id: payload.id,
+            data: nextData,
+            ...(typeof pending.startSeq === 'number'
+              ? {
+                  seq: pending.startSeq + nextData.length,
+                  rawLength: nextData.length
+                }
+              : {})
+          },
+          ownerWindow
+        )
         return
       }
       pendingData.set(payload.id, pending)
@@ -1436,33 +1585,50 @@ export function registerPtyHandlers(
     })
     localExitUnsub = localProvider.onExit((payload) => {
       if (!isLocalProvider) {
+        const exitedBeforeSpawnRegistered = !ptyOwnership.has(payload.id)
         clearProviderPtyState(payload.id)
         ptyOwnership.delete(payload.id)
         markClaudePtyExited(payload.id)
+        if (exitedBeforeSpawnRegistered) {
+          earlyProviderExitByPty.set(payload.id, payload.code)
+        } else {
+          earlyProviderExitByPty.delete(payload.id)
+        }
         runtime?.onPtyExit(payload.id, payload.code)
       }
-      if (!mainWindow.isDestroyed()) {
-        // Why: flush any batched data for this PTY before sending the exit event,
-        // otherwise the last ≤8ms of output is silently lost because the renderer
-        // tears down the terminal on pty:exit before the batch timer fires.
-        const remaining = pendingData.get(payload.id)
-        if (remaining) {
-          sendPtyDataToRenderer(
-            payload.id,
-            makePtyDataPayload(payload.id, remaining.data, remaining.startSeq)
-          )
-          pendingData.delete(payload.id)
-        }
-        lastInputAtByPty.delete(payload.id)
-        interactiveOutputCharsByPty.delete(payload.id)
-        rendererInFlightTotalChars = Math.max(
-          0,
-          rendererInFlightTotalChars - (rendererInFlightCharsByPty.get(payload.id) ?? 0)
+      // Why: flush any batched data for this PTY before sending the exit event,
+      // otherwise the last ≤8ms of output is silently lost because the renderer
+      // tears down the terminal on pty:exit before the batch timer fires.
+      const ownerWindow = getOwnerWindowForPty(payload.id)
+      if (!ownerWindow) {
+        ownerlessPendingDataSinceByPty.set(
+          payload.id,
+          ownerlessPendingDataSinceByPty.get(payload.id) ?? performance.now()
         )
-        rendererInFlightCharsByPty.delete(payload.id)
-        recordPtyRendererDeliveryPressure()
-        mainWindow.webContents.send('pty:exit', payload)
+        pendingExit.set(payload.id, payload)
+        schedulePendingDataFlush(OWNERLESS_PTY_OUTPUT_RETRY_MS)
+        return
       }
+      const remaining = pendingData.get(payload.id)
+      if (remaining) {
+        sendPtyDataToRenderer(
+          payload.id,
+          makePtyDataPayload(payload.id, remaining.data, remaining.startSeq),
+          ownerWindow
+        )
+        pendingData.delete(payload.id)
+      }
+      lastInputAtByPty.delete(payload.id)
+      interactiveOutputCharsByPty.delete(payload.id)
+      ownerlessPendingDataSinceByPty.delete(payload.id)
+      pendingExit.delete(payload.id)
+      rendererInFlightTotalChars = Math.max(
+        0,
+        rendererInFlightTotalChars - (rendererInFlightCharsByPty.get(payload.id) ?? 0)
+      )
+      rendererInFlightCharsByPty.delete(payload.id)
+      recordPtyRendererDeliveryPressure()
+      sendToPtyOwnerWindow(ownerWindow, 'pty:exit', payload)
     })
   }
 
@@ -1474,10 +1640,19 @@ export function registerPtyHandlers(
   // not stack listeners and trip Node's MaxListeners=10 warning. Many
   // sleeping PTYs waking at once (e.g. on relaunch) routinely fan out 10+
   // concurrent calls.
-  type SerializeResult = { data: string; cols: number; rows: number; lastTitle?: string } | null
+  type SerializeResult = {
+    data: string
+    cols: number
+    rows: number
+    lastTitle?: string
+  } | null
   const pendingSerializeRequests = new Map<
     string,
-    { resolve: (result: SerializeResult) => void; timeout: NodeJS.Timeout }
+    {
+      resolve: (result: SerializeResult) => void
+      timeout: NodeJS.Timeout
+      sender: WebContents
+    }
   >()
 
   function settleSerializeRequest(requestId: string, result: SerializeResult): void {
@@ -1493,7 +1668,7 @@ export function registerPtyHandlers(
   ipcMain.on(
     'pty:serializeBuffer:response',
     (
-      _event,
+      event,
       args: {
         requestId?: string
         snapshot?: {
@@ -1507,6 +1682,10 @@ export function registerPtyHandlers(
       if (typeof args?.requestId !== 'string') {
         return
       }
+      const pending = pendingSerializeRequests.get(args.requestId)
+      if (pending && event?.sender && event.sender !== pending.sender) {
+        return
+      }
       const snapshot = args.snapshot
       if (
         snapshot &&
@@ -1514,7 +1693,12 @@ export function registerPtyHandlers(
         typeof snapshot.cols === 'number' &&
         typeof snapshot.rows === 'number'
       ) {
-        const result: { data: string; cols: number; rows: number; lastTitle?: string } = {
+        const result: {
+          data: string
+          cols: number
+          rows: number
+          lastTitle?: string
+        } = {
           data: snapshot.data,
           cols: snapshot.cols,
           rows: snapshot.rows
@@ -1533,7 +1717,8 @@ export function registerPtyHandlers(
     ptyId: string,
     opts?: { scrollbackRows?: number; altScreenForcesZeroRows?: boolean }
   ): Promise<SerializeResult> {
-    if (mainWindow.isDestroyed()) {
+    const target = getOwnerWindowForPty(ptyId)
+    if (!target) {
       return Promise.resolve(null)
     }
 
@@ -1542,7 +1727,11 @@ export function registerPtyHandlers(
       const timeout = setTimeout(() => {
         settleSerializeRequest(requestId, null)
       }, 750)
-      pendingSerializeRequests.set(requestId, { resolve, timeout })
+      pendingSerializeRequests.set(requestId, {
+        resolve,
+        timeout,
+        sender: target.webContents
+      })
       const payload: {
         requestId: string
         ptyId: string
@@ -1551,28 +1740,47 @@ export function registerPtyHandlers(
       if (opts) {
         payload.opts = opts
       }
-      mainWindow.webContents.send('pty:serializeBuffer:request', payload)
+      target.webContents.send('pty:serializeBuffer:request', payload)
     })
   }
 
   // Kill orphaned PTY processes from previous page loads when the renderer reloads.
   // Why: only applies to LocalPtyProvider where PTYs live in the Electron main
-  // process and can become orphaned on page reload. Daemon-backed sessions
-  // survive renderer restarts by design — orphan cleanup would kill them.
-  clearDidFinishLoadHandler()
+  // process and can become orphaned on page reload. In multi-window mode, only
+  // the reloaded window's PTYs are candidates because other renderers stay live.
   if (localProvider instanceof LocalPtyProvider) {
     const lp = localProvider
-    didFinishLoadHandler = () => {
-      const killed = lp.killOrphanedPtys(lp.advanceGeneration() - 1)
-      for (const { id } of killed) {
-        clearProviderPtyState(id)
-        ptyOwnership.delete(id)
-        markClaudePtyExited(id)
-        runtime?.onPtyExit(id, -1)
-      }
+    const webContents = mainWindow.webContents
+    const existingHandler = didFinishLoadHandlersByWebContents.get(webContents)
+    if (existingHandler) {
+      webContents.removeListener('did-finish-load', existingHandler)
+      didFinishLoadHandlersByWebContents.delete(webContents)
     }
-    didFinishLoadWebContents = mainWindow.webContents
-    mainWindow.webContents.on('did-finish-load', didFinishLoadHandler)
+    {
+      const didFinishLoadHandler = () => {
+        const candidateIds =
+          getMainWindows().length === 1
+            ? undefined
+            : runtime?.resolvePtyIdsForOwnerWindow(mainWindow.id)
+        const killed = lp.killOrphanedPtys(lp.advanceGeneration() - 1, candidateIds)
+        for (const { id } of killed) {
+          clearProviderPtyState(id)
+          ptyOwnership.delete(id)
+          markClaudePtyExited(id)
+          runtime?.onPtyExit(id, -1)
+        }
+      }
+      didFinishLoadHandlersByWebContents.set(webContents, didFinishLoadHandler)
+      webContents.on('did-finish-load', didFinishLoadHandler)
+      mainWindow.on?.('closed', () => {
+        if (didFinishLoadHandlersByWebContents.get(webContents) === didFinishLoadHandler) {
+          didFinishLoadHandlersByWebContents.delete(webContents)
+          webContents.removeListener('did-finish-load', didFinishLoadHandler)
+        }
+      })
+    }
+  } else {
+    clearDidFinishLoadHandlers()
   }
 
   const assertFolderWorkspacePtyPathUsable = async (
@@ -1584,7 +1792,10 @@ export function registerPtyHandlers(
     }
     const status = await getFolderWorkspacePathStatus(
       store,
-      { scope: 'folder-workspace', folderWorkspaceId: workspaceScope.folderWorkspaceId },
+      {
+        scope: 'folder-workspace',
+        folderWorkspaceId: workspaceScope.folderWorkspaceId
+      },
       { getSshFilesystemProvider }
     )
     assertFolderWorkspacePathUsable(status)
@@ -1727,7 +1938,10 @@ export function registerPtyHandlers(
       }
       if (sessionId !== undefined) {
         spawnOptions.sessionId = sessionId
-        ptySizes.set(effectiveSessionAppId ?? sessionId, { cols: args.cols, rows: args.rows })
+        ptySizes.set(effectiveSessionAppId ?? sessionId, {
+          cols: args.cols,
+          rows: args.rows
+        })
       }
       if (process.platform === 'win32' && !args.connectionId) {
         spawnOptions.shellOverride = getSettings?.()?.terminalWindowsShell
@@ -1825,6 +2039,7 @@ export function registerPtyHandlers(
       }
       if (args.worktreeId) {
         runtime?.registerPty(result.id, args.worktreeId, args.connectionId ?? null)
+        replayEarlyProviderExit(result.id)
       }
       if (isClaudeLaunch) {
         markClaudePtySpawned(result.id)
@@ -1931,7 +2146,7 @@ export function registerPtyHandlers(
       // Why: desktop xterm owns local scrollback, while daemon/SSH providers
       // own their own retained buffers. Clear both surfaces so mobile
       // resubscribe snapshots do not resurrect cleared history.
-      mainWindow.webContents.send('pty:clearBuffer:request', { ptyId })
+      sendToPtyOwner(ptyId, 'pty:clearBuffer:request', { ptyId })
       try {
         await getProviderForPty(ptyId).clearBuffer(ptyId)
       } catch {
@@ -1982,7 +2197,7 @@ export function registerPtyHandlers(
   ipcMain.handle(
     'pty:getMainBufferSnapshot',
     async (
-      _event,
+      event,
       args: { id?: unknown; opts?: { scrollbackRows?: unknown } }
     ): Promise<{
       data: string
@@ -1996,9 +2211,14 @@ export function registerPtyHandlers(
       if (!runtime || typeof args?.id !== 'string' || args.id.length === 0) {
         return null
       }
+      if (!senderOwnsPty(event, args.id)) {
+        return null
+      }
       const scrollbackRows = normalizeSnapshotScrollbackRows(args.opts?.scrollbackRows)
       try {
-        return await runtime.serializeMainTerminalBuffer(args.id, { scrollbackRows })
+        return await runtime.serializeMainTerminalBuffer(args.id, {
+          scrollbackRows
+        })
       } catch {
         return null
       }
@@ -2015,7 +2235,7 @@ export function registerPtyHandlers(
   ipcMain.handle(
     'pty:spawn',
     async (
-      _event,
+      event,
       args: {
         cols: number
         rows: number
@@ -2374,6 +2594,10 @@ export function registerPtyHandlers(
         }
       }
       ptyOwnership.set(result.id, args.connectionId ?? null)
+      const ownerWindow = event?.sender ? getMainWindowForWebContents(event.sender) : null
+      if (ownerWindow) {
+        runtime?.registerPtyOwnerWindow(result.id, ownerWindow.id)
+      }
       const relayResultId = getRelayPtyId(args.connectionId, result.id)
       if (store && args.connectionId) {
         // Why: remote PTYs live in the SSH relay grace window after Orca
@@ -2482,6 +2706,7 @@ export function registerPtyHandlers(
         args.worktreeId.length <= 512
       ) {
         runtime?.registerPty(result.id, args.worktreeId, args.connectionId ?? null)
+        replayEarlyProviderExit(result.id)
       }
       if (isClaudeLaunch) {
         markClaudePtySpawned(result.id)
@@ -2573,7 +2798,13 @@ export function registerPtyHandlers(
     }
   )
 
-  const writePtyInput = (args: { id: string; data: string }): boolean => {
+  const writePtyInput = (
+    event: Electron.IpcMainEvent,
+    args: { id: string; data: string }
+  ): boolean => {
+    if (!senderOwnsPty(event, args.id)) {
+      return false
+    }
     // Why: defense-in-depth for the mobile-presence lock. The renderer's
     // xterm.onData guard already drops desktop keystrokes when mobile is
     // driving, but a stale view between the main-side state flip and the
@@ -2598,7 +2829,13 @@ export function registerPtyHandlers(
     }
   }
 
-  const writePtyInputAccepted = (args: { id: string; data: string }): boolean => {
+  const writePtyInputAccepted = (
+    event: Electron.IpcMainInvokeEvent,
+    args: { id: string; data: string }
+  ): boolean => {
+    if (!senderOwnsPty(event, args.id)) {
+      return false
+    }
     if (runtime?.getDriver(args.id).kind === 'mobile') {
       return false
     }
@@ -2624,18 +2861,21 @@ export function registerPtyHandlers(
     }
   }
 
-  ipcMain.on('pty:write', (_event, args: { id: string; data: string }) => {
-    writePtyInput(args)
+  ipcMain.on('pty:write', (event, args: { id: string; data: string }) => {
+    writePtyInput(event, args)
   })
-  ipcMain.handle('pty:writeAccepted', (_event, args: { id: string; data: string }): boolean => {
-    return writePtyInputAccepted(args)
+  ipcMain.handle('pty:writeAccepted', (event, args: { id: string; data: string }): boolean => {
+    return writePtyInputAccepted(event, args)
   })
 
   // Why: resize is fire-and-forget — the renderer doesn't need a reply.
   // Using ipcMain.on (not .handle) halves IPC traffic by avoiding the
   // empty acknowledgement message back to the renderer.
   ipcMain.removeAllListeners('pty:resize')
-  ipcMain.on('pty:resize', (_event, args: { id: string; cols: number; rows: number }) => {
+  ipcMain.on('pty:resize', (event, args: { id: string; cols: number; rows: number }) => {
+    if (!senderOwnsPty(event, args.id)) {
+      return
+    }
     // Why: after a desktop-fit override change, the desktop renderer's
     // re-render cascade runs safeFit on ALL panes (not just the affected
     // one). Background-tab panes get measured at full-width (214) instead
@@ -2680,13 +2920,19 @@ export function registerPtyHandlers(
   // driver gate; pty:reportGeometry never resizes the PTY, only refreshes
   // the restore-target cache. See docs/mobile-fit-hold.md.
   ipcMain.removeAllListeners('pty:reportGeometry')
-  ipcMain.on('pty:reportGeometry', (_event, args: { id: string; cols: number; rows: number }) => {
+  ipcMain.on('pty:reportGeometry', (event, args: { id: string; cols: number; rows: number }) => {
+    if (!senderOwnsPty(event, args.id)) {
+      return
+    }
     runtime?.recordRendererGeometry(args.id, args.cols, args.rows)
   })
 
   // Why: fire-and-forget — clears the DaemonPtyAdapter's sticky cold restore
   // cache after the renderer has consumed the data. No-op for non-daemon providers.
-  ipcMain.on('pty:ackColdRestore', (_event, args: { id: string }) => {
+  ipcMain.on('pty:ackColdRestore', (event, args: { id: string }) => {
+    if (!senderOwnsPty(event, args.id)) {
+      return
+    }
     const provider = tryGetProviderForPty(args.id)
     if (provider && 'ackColdRestore' in provider && typeof provider.ackColdRestore === 'function') {
       provider.ackColdRestore(args.id)
@@ -2696,7 +2942,10 @@ export function registerPtyHandlers(
   // Why: renderer ACKs bound main→renderer terminal delivery without stopping
   // PTY ingestion. Agent/status consumers still see every chunk through the
   // provider/runtime path while background renderer writes wait their turn.
-  ipcMain.on('pty:ackData', (_event, args: { id: string; charCount: number }) => {
+  ipcMain.on('pty:ackData', (event, args: { id: string; charCount: number }) => {
+    if (!senderOwnsPty(event, args.id)) {
+      return
+    }
     const charCount = Number.isFinite(args.charCount) ? Math.max(0, args.charCount) : 0
     const current = rendererInFlightCharsByPty.get(args.id) ?? 0
     const acknowledged = Math.min(current, charCount)
@@ -2715,8 +2964,8 @@ export function registerPtyHandlers(
   })
 
   ipcMain.removeAllListeners('pty:setActiveRendererPty')
-  ipcMain.on('pty:setActiveRendererPty', (_event, args: { id: string; active: boolean }) => {
-    if (typeof args.id !== 'string' || !args.id) {
+  ipcMain.on('pty:setActiveRendererPty', (event, args: { id: string; active: boolean }) => {
+    if (typeof args.id !== 'string' || !args.id || !senderOwnsPty(event, args.id)) {
       return
     }
     // Why: this is a renderer scheduling hint only. PTY reads, runtime state,
@@ -2733,13 +2982,19 @@ export function registerPtyHandlers(
   })
 
   ipcMain.removeAllListeners('pty:signal')
-  ipcMain.on('pty:signal', (_event, args: { id: string; signal: string }) => {
+  ipcMain.on('pty:signal', (event, args: { id: string; signal: string }) => {
+    if (!senderOwnsPty(event, args.id)) {
+      return
+    }
     tryGetProviderForPty(args.id)
       ?.sendSignal(args.id, args.signal)
       .catch(() => {})
   })
 
-  ipcMain.handle('pty:kill', async (_event, args: { id: string; keepHistory?: boolean }) => {
+  ipcMain.handle('pty:kill', async (event, args: { id: string; keepHistory?: boolean }) => {
+    if (!senderOwnsPty(event, args.id)) {
+      return
+    }
     const ownedConnectionId = ptyOwnership.get(args.id)
     const parsedSshId = ownedConnectionId === undefined ? parseAppSshPtyId(args.id) : null
     const connectionId = ownedConnectionId ?? parsedSshId?.connectionId
@@ -2798,16 +3053,21 @@ export function registerPtyHandlers(
     }
   )
 
-  ipcMain.handle(
-    'pty:hasChildProcesses',
-    async (_event, args: { id: string }): Promise<boolean> => {
-      return getProviderForPty(args.id).hasChildProcesses(args.id)
+  // Why: cwd/process metadata can reveal another window's terminal state.
+  // Keep raw-PTY metadata reads scoped to the owning renderer window.
+  ipcMain.handle('pty:hasChildProcesses', async (event, args: { id: string }): Promise<boolean> => {
+    if (!senderOwnsPty(event, args.id)) {
+      return false
     }
-  )
+    return getProviderForPty(args.id).hasChildProcesses(args.id)
+  })
 
   ipcMain.handle(
     'pty:getForegroundProcess',
-    async (_event, args: { id: string }): Promise<string | null> => {
+    async (event, args: { id: string }): Promise<string | null> => {
+      if (!senderOwnsPty(event, args.id)) {
+        return null
+      }
       return getProviderForPty(args.id).getForegroundProcess(args.id)
     }
   )
@@ -2818,7 +3078,10 @@ export function registerPtyHandlers(
   // use the same code path. Providers return '' when the id is unknown or
   // the platform cannot resolve a cwd (Windows); the renderer treats ''
   // as "fall through to the next fallback layer".
-  ipcMain.handle('pty:getCwd', async (_event, args: { id: string }): Promise<string> => {
+  ipcMain.handle('pty:getCwd', async (event, args: { id: string }): Promise<string> => {
+    if (!senderOwnsPty(event, args.id)) {
+      return ''
+    }
     try {
       return await getProviderForPty(args.id).getCwd(args.id)
     } catch {

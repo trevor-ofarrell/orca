@@ -57,7 +57,8 @@
     "zoomOut": "缩小",
     "openWorktreePalette": "打开工作树面板",
     "window": "窗口",
-    "help": "帮助"
+    "help": "帮助",
+    "newWindow": "New Window"
   },
   "worktreeJumpPalette": {
     "matchLabel": {
@@ -4517,7 +4518,15 @@
           "f63ea281e3": "用于 Agent 完成和阻塞状态的螺纹左侧边栏提要。",
           "ca2219fe5e": "显示固定在右下角的小动画宠物。从状态栏宠物菜单中选择一个角色（Claudino、OpenCode、Gremlin）或上传您自己的 PNG、APNG、GIF、WebP、JPG 或 SVG。随时从同一菜单隐藏它，而不禁用此设置。",
           "dd6f0a1d45": "宠物",
-          "0e89a574ae": "右下角漂浮的动画宠物。"
+          "0e89a574ae": "右下角漂浮的动画宠物。",
+          "efc5cd3ad7": "Multi-window",
+          "9403a2fffb": "Enable File > New Window for multiple monitor workflows. Requires restart.",
+          "73d191586e": "Adds File > New Window for multiple monitor workflows. Requires restart.",
+          "31d6d8d7b4": "Restart required",
+          "45513cd4aa": "Orca applies multi-window support at startup.",
+          "c709b5448c": "Restart",
+          "847886cf3e": "Smart New Tab menu",
+          "523b819a55": "Type in the New Tab menu to open a terminal, launch an agent, visit a URL, or open/create a file."
         },
         "FloatingWorkspacePane": {
           "aeaf76fda9": "状态栏",
@@ -6481,7 +6490,9 @@
             "b54cea709b": "伙伴",
             "051203d37c": "宠物",
             "6b5a56ac35": "右下角漂浮的动画宠物。",
-            "87d99e634b": "宠物"
+            "87d99e634b": "宠物",
+            "4f0b2bb8d1": "Smart New Tab menu",
+            "818dac284f": "Multi-window"
           }
         },
         "floating": {

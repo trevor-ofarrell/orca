@@ -965,6 +965,276 @@ describe('OrcaRuntimeService', () => {
     expect(runtime.getStatus().authoritativeWindowId).toBe(TEST_WINDOW_ID)
   })
 
+  it('does not let a secondary window sync replace the authoritative graph', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(TEST_WINDOW_ID)
+    runtime.syncWindowGraph(TEST_WINDOW_ID, { tabs: [], leaves: [] })
+
+    expect(() => runtime.syncWindowGraph(2, { tabs: [], leaves: [] })).not.toThrow()
+    expect(runtime.getStatus()).toMatchObject({
+      authoritativeWindowId: TEST_WINDOW_ID,
+      graphStatus: 'ready'
+    })
+  })
+
+  it('indexes independent graph ownership from secondary window syncs', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-a',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'A',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-a',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-a'
+        }
+      ],
+      mobileSessionTabs: [
+        {
+          worktree: 'repo-1::/tmp/worktree-a',
+          publicationEpoch: 'a',
+          snapshotVersion: 1,
+          activeGroupId: null,
+          activeTabId: null,
+          activeTabType: null,
+          tabs: [
+            {
+              type: 'browser',
+              id: 'browser-tab-a',
+              title: 'Preview',
+              browserWorkspaceId: 'browser-workspace-a',
+              browserPageId: 'browser-page-a',
+              url: 'http://localhost',
+              loading: false,
+              canGoBack: false,
+              canGoForward: false,
+              isActive: true
+            }
+          ]
+        }
+      ]
+    })
+    runtime.attachWindow(2)
+    runtime.syncWindowGraph(2, {
+      tabs: [
+        {
+          tabId: 'tab-b',
+          worktreeId: 'repo-1::/tmp/worktree-b',
+          title: 'B',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-b',
+          worktreeId: 'repo-1::/tmp/worktree-b',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-b'
+        }
+      ]
+    })
+
+    expect(runtime.getStatus()).toMatchObject({
+      authoritativeWindowId: 1,
+      graphStatus: 'ready',
+      liveTabCount: 2,
+      liveLeafCount: 2
+    })
+    expect(runtime.resolveOwnerWindowIdForTabId('tab-a')).toBe(1)
+    expect(runtime.resolveOwnerWindowIdForTabId('tab-b')).toBe(2)
+    expect(runtime.resolveOwnerWindowIdForWorktreeTab('repo-1::/tmp/worktree-b', 'tab-b')).toBe(2)
+    expect(runtime.resolveOwnerWindowIdForLeaf('tab-b', 'pane:1')).toBe(2)
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-b')).toBe(2)
+    expect(runtime.resolveOwnerWindowIdForBrowserPageId('browser-page-a')).toBe(1)
+  })
+
+  it('keeps the first live owner when two windows publish duplicate graph ids', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-duplicate',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'A',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-duplicate',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-duplicate'
+        }
+      ]
+    })
+    runtime.attachWindow(2)
+    runtime.syncWindowGraph(2, {
+      tabs: [
+        {
+          tabId: 'tab-duplicate',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'A Copy',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-duplicate',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 2,
+          ptyId: 'pty-duplicate'
+        }
+      ]
+    })
+
+    expect(runtime.getStatus()).toMatchObject({
+      liveTabCount: 1,
+      liveLeafCount: 1
+    })
+    expect(runtime.resolveOwnerWindowIdForTabId('tab-duplicate')).toBe(1)
+    expect(runtime.resolveOwnerWindowIdForLeaf('tab-duplicate', 'pane:1')).toBe(1)
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-duplicate')).toBe(1)
+  })
+
+  it('preserves spawn-time PTY ownership until the renderer graph adopts it', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, { tabs: [], leaves: [] })
+    runtime.registerPtyOwnerWindow('pty-spawned', 1)
+    runtime.attachWindow(2)
+    runtime.syncWindowGraph(2, {
+      tabs: [
+        {
+          tabId: 'tab-other',
+          worktreeId: 'repo-1::/tmp/worktree-b',
+          title: 'B',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: []
+    })
+
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-spawned')).toBe(1)
+
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-owned',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'A',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-owned',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-spawned'
+        }
+      ]
+    })
+
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-spawned')).toBe(1)
+  })
+
+  it('clears transient PTY ownership when the owning window graph disappears', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, { tabs: [], leaves: [] })
+    runtime.registerPtyOwnerWindow('pty-spawned', 1)
+
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-spawned')).toBe(1)
+
+    runtime.markGraphUnavailable(1)
+
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-spawned')).toBeNull()
+  })
+
+  it('keeps another window graph ready when a secondary window closes', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-a',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'A',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-a',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-a'
+        }
+      ]
+    })
+    runtime.attachWindow(2)
+    runtime.syncWindowGraph(2, {
+      tabs: [
+        {
+          tabId: 'tab-b',
+          worktreeId: 'repo-1::/tmp/worktree-b',
+          title: 'B',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-b',
+          worktreeId: 'repo-1::/tmp/worktree-b',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-b'
+        }
+      ]
+    })
+
+    runtime.markGraphUnavailable(2)
+
+    expect(runtime.getStatus()).toMatchObject({
+      authoritativeWindowId: 1,
+      graphStatus: 'ready',
+      liveTabCount: 1,
+      liveLeafCount: 1
+    })
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-a')).toBe(1)
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-b')).toBeNull()
+  })
+
   it('bumps the epoch and enters reloading when the authoritative window reloads', () => {
     const runtime = createRuntime()
 
@@ -4238,6 +4508,63 @@ describe('OrcaRuntimeService', () => {
         worktreeId: TEST_WORKTREE_ID
       })
     )
+  })
+
+  it('routes renderer-backed terminal creation to a ready window when the authoritative window reloads', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const sendToReloading = vi.fn()
+    const sendToReady = vi.fn((_channel: string, payload: { requestId: string }) => {
+      runtime.registerPty('pty-ready', TEST_WORKTREE_ID)
+      runtime.syncWindowGraph(2, {
+        tabs: [
+          {
+            tabId: 'tab-ready',
+            worktreeId: TEST_WORKTREE_ID,
+            title: 'Ready Terminal',
+            activeLeafId: 'pane:ready',
+            layout: null
+          }
+        ],
+        leaves: [
+          {
+            tabId: 'tab-ready',
+            worktreeId: TEST_WORKTREE_ID,
+            leafId: 'pane:ready',
+            paneRuntimeId: 1,
+            ptyId: 'pty-ready'
+          }
+        ]
+      })
+      ipcMain.emit(
+        'terminal:tabCreateReply',
+        { sender: readyWebContents },
+        { requestId: payload.requestId, tabId: 'tab-ready', title: 'Ready Terminal' }
+      )
+    })
+    const reloadingWebContents = { send: sendToReloading }
+    const readyWebContents = { send: sendToReady }
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, { tabs: [], leaves: [] })
+    runtime.markRendererReloading(1)
+    runtime.attachWindow(2)
+    runtime.syncWindowGraph(2, { tabs: [], leaves: [] })
+    electronMocks.BrowserWindow.fromId.mockImplementation((windowId: number) => ({
+      isDestroyed: () => false,
+      webContents: windowId === 2 ? readyWebContents : reloadingWebContents
+    }))
+
+    await expect(
+      runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+        command: 'codex',
+        rendererBacked: true
+      })
+    ).resolves.toMatchObject({ title: 'Ready Terminal', surface: 'visible' })
+
+    expect(sendToReady).toHaveBeenCalledWith(
+      'terminal:requestTabCreate',
+      expect.objectContaining({ command: 'codex' })
+    )
+    expect(sendToReloading).not.toHaveBeenCalled()
   })
 
   it('splits visible pty-backed terminal sessions through the parent renderer tab', async () => {
@@ -9919,6 +10246,7 @@ describe('OrcaRuntimeService', () => {
       terminalFitOverrideChanged: vi.fn(),
       terminalDriverChanged: vi.fn()
     })
+    const webContents = { send: vi.fn() }
     const send = vi.fn((_channel: string, payload: { requestId: string; activate?: boolean }) => {
       runtime.syncWindowGraph(1, {
         tabs: [],
@@ -9946,7 +10274,7 @@ describe('OrcaRuntimeService', () => {
       })
       ipcMain.emit(
         'terminal:tabCreateReply',
-        {},
+        { sender: webContents },
         {
           requestId: payload.requestId,
           tabId: 'tab-renderer',
@@ -9958,8 +10286,9 @@ describe('OrcaRuntimeService', () => {
     runtime.syncWindowGraph(1, { tabs: [], leaves: [] })
     electronMocks.BrowserWindow.fromId.mockReturnValue({
       isDestroyed: () => false,
-      webContents: { send }
+      webContents
     })
+    webContents.send = send
 
     const result = await runtime.createMobileSessionTerminal(`id:${TEST_WORKTREE_ID}`, {
       activate: false

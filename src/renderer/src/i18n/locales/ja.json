@@ -57,7 +57,8 @@
     "zoomOut": "ズームアウト",
     "openWorktreePalette": "ワークツリーパレットを開く",
     "window": "ウィンドウ",
-    "help": "ヘルプ"
+    "help": "ヘルプ",
+    "newWindow": "New Window"
   },
   "worktreeJumpPalette": {
     "matchLabel": {
@@ -4517,7 +4518,15 @@
           "f63ea281e3": "agent の完了とブロック状態を示すスレッド化された左側のサイドバー フィード。",
           "ca2219fe5e": "右下隅に固定された小さなアニメーションのペットを表示します。キャラクター (Claudino、OpenCode、Gremlin) を選択するか、ステータス バーのペット メニューから独自の PNG、APNG、GIF、WebP、JPG、または SVG をアップロードします。この設定を無効にしなくても、同じメニューからいつでも非表示にできます。",
           "dd6f0a1d45": "ペット",
-          "0e89a574ae": "右下隅に浮かぶアニメーションのペット。"
+          "0e89a574ae": "右下隅に浮かぶアニメーションのペット。",
+          "efc5cd3ad7": "Multi-window",
+          "9403a2fffb": "Enable File > New Window for multiple monitor workflows. Requires restart.",
+          "73d191586e": "Adds File > New Window for multiple monitor workflows. Requires restart.",
+          "31d6d8d7b4": "Restart required",
+          "45513cd4aa": "Orca applies multi-window support at startup.",
+          "c709b5448c": "Restart",
+          "847886cf3e": "Smart New Tab menu",
+          "523b819a55": "Type in the New Tab menu to open a terminal, launch an agent, visit a URL, or open/create a file."
         },
         "FloatingWorkspacePane": {
           "aeaf76fda9": "ステータスバー",
@@ -6518,7 +6527,9 @@
             "b54cea709b": "相棒",
             "051203d37c": "ペット",
             "6b5a56ac35": "右下隅に浮かぶアニメーションのペット。",
-            "87d99e634b": "ペット"
+            "87d99e634b": "ペット",
+            "4f0b2bb8d1": "Smart New Tab menu",
+            "818dac284f": "Multi-window"
           }
         },
         "floating": {

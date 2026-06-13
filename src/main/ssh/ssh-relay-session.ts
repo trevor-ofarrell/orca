@@ -61,6 +61,12 @@ import {
 import type { Store } from '../persistence'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
 import { runRemoteOrcaCli } from './ssh-remote-orca-cli'
+import {
+  broadcastToMainWindows,
+  getMainWindowById,
+  getSingleMainWindow,
+  sendToWindow
+} from '../window/main-window-registry'
 
 export type RelaySessionState = 'idle' | 'deploying' | 'ready' | 'reconnecting' | 'disposed'
 
@@ -878,15 +884,11 @@ export class SshRelaySession {
   // event wiring. Previously forgetting to wire onReplay on one path
   // caused silent terminal blanking after reconnect.
   private broadcastEmptyLists(): void {
-    const win = this.getMainWindow()
-    if (!win || win.isDestroyed()) {
-      return
-    }
-    win.webContents.send('ssh:port-forwards-changed', {
+    broadcastToMainWindows('ssh:port-forwards-changed', {
       targetId: this.targetId,
       forwards: []
     })
-    win.webContents.send('ssh:detected-ports-changed', {
+    broadcastToMainWindows('ssh:detected-ports-changed', {
       targetId: this.targetId,
       ports: []
     })
@@ -919,31 +921,42 @@ export class SshRelaySession {
   private wireUpPtyEvents(ptyProvider: SshPtyProvider): void {
     ptyProvider.onData((payload) => {
       const seq = this.runtime?.onPtyData(payload.id, payload.data, Date.now())
-      const win = this.getMainWindow()
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('pty:data', {
+      const win = this.getOwnerWindowForPty(payload.id)
+      if (win) {
+        sendToWindow(win, 'pty:data', {
           ...payload,
           ...(typeof seq === 'number' ? { seq, rawLength: payload.data.length } : {})
         })
       }
     })
     ptyProvider.onReplay((payload) => {
-      const win = this.getMainWindow()
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('pty:replay', payload)
+      const win = this.getOwnerWindowForPty(payload.id)
+      if (win) {
+        sendToWindow(win, 'pty:replay', payload)
       }
     })
     ptyProvider.onExit((payload) => {
       const relayPtyId = toRelaySshPtyId(this.targetId, payload.id)
+      const win = this.getOwnerWindowForPty(payload.id)
       clearProviderPtyState(payload.id)
       deletePtyOwnership(payload.id)
       this.store.markSshRemotePtyLease(this.targetId, relayPtyId, 'terminated')
       this.runtime?.onPtyExit(payload.id, payload.code)
-      const win = this.getMainWindow()
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('pty:exit', payload)
+      if (win) {
+        sendToWindow(win, 'pty:exit', payload)
       }
     })
+  }
+
+  private getOwnerWindowForPty(ptyId: string): BrowserWindow | null {
+    if (typeof this.runtime?.resolveOwnerWindowIdForPtyId !== 'function') {
+      return this.getMainWindow()
+    }
+    const ownerWindowId = this.runtime.resolveOwnerWindowIdForPtyId(ptyId)
+    if (ownerWindowId !== null) {
+      return getMainWindowById(ownerWindowId)
+    }
+    return getSingleMainWindow()
   }
 
   private async reattachKnownPtys(shouldContinue: () => boolean): Promise<void> {
@@ -987,15 +1000,15 @@ export class SshRelaySession {
           }`
         )
         const appPtyId = toAppSshPtyId(this.targetId, ptyId)
+        const win = this.getOwnerWindowForPty(appPtyId)
         clearProviderPtyState(appPtyId)
         deletePtyOwnership(appPtyId)
         this.store.markSshRemotePtyLease(this.targetId, ptyId, 'expired')
         // Why: if the new relay cannot reattach this id, the remote backing
         // process is gone. Tell the renderer so it clears stale pane bindings
         // instead of keeping a cursor-only terminal.
-        const win = this.getMainWindow()
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('pty:exit', { id: appPtyId, code: -1 })
+        if (win) {
+          sendToWindow(win, 'pty:exit', { id: appPtyId, code: -1 })
         }
       }
     }

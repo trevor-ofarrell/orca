@@ -57,7 +57,8 @@
     "zoomOut": "Alejar",
     "openWorktreePalette": "Abrir paleta de árbol de trabajo",
     "window": "Ventana",
-    "help": "Ayuda"
+    "help": "Ayuda",
+    "newWindow": "New Window"
   },
   "worktreeJumpPalette": {
     "matchLabel": {
@@ -4532,7 +4533,15 @@
           "f63ea281e3": "Feed integrado en la barra lateral izquierda para completar agentes y estados de bloqueo.",
           "ca2219fe5e": "Muestra una pequeña mascota animada fijada en la esquina inferior derecha. Elige un personaje (Claudino, OpenCode, Gremlin) o carga tu propio PNG, APNG, GIF, WebP, JPG o SVG desde el menú de mascotas de la barra de estado. Ocultarlo en cualquier momento desde el mismo menú sin desactivar esta configuración.",
           "dd6f0a1d45": "Mascota",
-          "0e89a574ae": "Mascota animada flotante en la esquina inferior derecha."
+          "0e89a574ae": "Mascota animada flotante en la esquina inferior derecha.",
+          "efc5cd3ad7": "Multi-window",
+          "9403a2fffb": "Enable File > New Window for multiple monitor workflows. Requires restart.",
+          "73d191586e": "Adds File > New Window for multiple monitor workflows. Requires restart.",
+          "31d6d8d7b4": "Restart required",
+          "45513cd4aa": "Orca applies multi-window support at startup.",
+          "c709b5448c": "Restart",
+          "847886cf3e": "Smart New Tab menu",
+          "523b819a55": "Type in the New Tab menu to open a terminal, launch an agent, visit a URL, or open/create a file."
         },
         "FloatingWorkspacePane": {
           "aeaf76fda9": "Barra de estado",
@@ -6496,7 +6505,9 @@
             "b54cea709b": "compañero",
             "051203d37c": "mascota",
             "6b5a56ac35": "Mascota animada flotante en la esquina inferior derecha.",
-            "87d99e634b": "Mascota"
+            "87d99e634b": "Mascota",
+            "4f0b2bb8d1": "Smart New Tab menu",
+            "818dac284f": "Multi-window"
           }
         },
         "floating": {

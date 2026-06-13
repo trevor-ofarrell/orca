@@ -25,7 +25,9 @@ const isMac = process.platform === 'darwin'
 
 function buildMenuOptions() {
   return {
+    multiWindowEnabled: true,
     onCheckForUpdates: vi.fn(),
+    onNewWindow: vi.fn(),
     onOpenSettings: vi.fn(),
     onOpenSetupGuide: vi.fn(),
     onOpenFeatureTour: vi.fn(),
@@ -111,7 +113,10 @@ describe('registerAppMenu', () => {
 
     expect(reloadMock).toHaveBeenCalledTimes(1)
     expect(reloadIgnoringCacheMock).not.toHaveBeenCalled()
-    expect(options.onBeforeReload).toHaveBeenCalledWith({ ignoreCache: false, webContentsId: 101 })
+    expect(options.onBeforeReload).toHaveBeenCalledWith({
+      ignoreCache: false,
+      webContentsId: 101
+    })
   })
 
   it('force reloads the focused window from the view menu', () => {
@@ -136,7 +141,10 @@ describe('registerAppMenu', () => {
 
     expect(reloadIgnoringCacheMock).toHaveBeenCalledTimes(1)
     expect(reloadMock).not.toHaveBeenCalled()
-    expect(options.onBeforeReload).toHaveBeenCalledWith({ ignoreCache: true, webContentsId: 102 })
+    expect(options.onBeforeReload).toHaveBeenCalledWith({
+      ignoreCache: true,
+      webContentsId: 102
+    })
   })
 
   it('includes prereleases when Check for Updates is clicked with shift held', () => {
@@ -192,6 +200,7 @@ describe('registerAppMenu', () => {
     expect(fileLabels).toEqual(
       expect.arrayContaining([
         `Export as PDF...\t${isMac ? '⌘⇧E' : 'Ctrl+Shift+E'}`,
+        'New Window',
         `Settings\t${isMac ? '⌘,' : 'Ctrl+,'}`,
         'Exit'
       ])
@@ -220,6 +229,7 @@ describe('registerAppMenu', () => {
     // Why: on macOS File should NOT duplicate Settings/Exit — those live in
     // the system app menu, so only Export belongs under File.
     const fileLabels = getSubmenu(template, 'File').map((item) => item.label)
+    expect(fileLabels).toContain('New Window')
     expect(fileLabels).not.toContain(`Settings\t${isMac ? '⌘,' : 'Ctrl+,'}`)
     expect(fileLabels).not.toContain('Exit')
     const helpLabels = getSubmenu(template, 'Help').map((item) => item.label)
@@ -245,6 +255,31 @@ describe('registerAppMenu', () => {
 
     expect(options.onOpenSetupGuide).toHaveBeenCalledTimes(1)
     expect(options.onOpenSetupGuide).toHaveBeenCalledWith(targetWindow)
+  })
+
+  it('routes New Window through its callback without an accelerator', () => {
+    const options = buildMenuOptions()
+    registerAppMenu(options)
+
+    const newWindowItem = getSubmenu(getTemplate(), 'File').find(
+      (entry) => entry.label === 'New Window'
+    )
+
+    expect(newWindowItem?.accelerator).toBeUndefined()
+
+    newWindowItem?.click?.({} as never, undefined as never, {} as Electron.KeyboardEvent)
+
+    expect(options.onNewWindow).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides New Window when experimental multi-window support is disabled', () => {
+    const options = { ...buildMenuOptions(), multiWindowEnabled: false }
+    registerAppMenu(options)
+
+    const fileSubmenu = getSubmenu(getTemplate(), 'File')
+
+    expect(fileSubmenu.find((entry) => entry.label === 'New Window')).toBeUndefined()
+    expect(options.onNewWindow).not.toHaveBeenCalled()
   })
 
   it('routes Feature tour through its callback', () => {
@@ -337,10 +372,10 @@ describe('registerAppMenu', () => {
       .find((item) => item.label === 'Show Titlebar App Name')
       ?.click?.({} as never, {} as never, {} as never)
 
-    expect(options.onToggleAppearance).toHaveBeenCalledWith('showTasksButton')
-    expect(options.onToggleAppearance).toHaveBeenCalledWith('showAutomationsButton')
-    expect(options.onToggleAppearance).toHaveBeenCalledWith('showMobileButton')
-    expect(options.onToggleAppearance).toHaveBeenCalledWith('showTitlebarAppName')
+    expect(options.onToggleAppearance).toHaveBeenCalledWith('showTasksButton', {})
+    expect(options.onToggleAppearance).toHaveBeenCalledWith('showAutomationsButton', {})
+    expect(options.onToggleAppearance).toHaveBeenCalledWith('showMobileButton', {})
+    expect(options.onToggleAppearance).toHaveBeenCalledWith('showTitlebarAppName', {})
   })
 
   it('routes sidebar toggle items through their callbacks', () => {
