@@ -274,7 +274,8 @@
           "760bc6883d": "Codex",
           "a5fc0cb622": "OpenClaude",
           "bf53f09bf8": "Claude Agent Teams",
-          "0708ed89f1": "Claude"
+          "0708ed89f1": "Claude",
+          "fc80296033": "Devin"
         },
         "skill": {
           "cli": {
@@ -1551,7 +1552,9 @@
         "a2a279b32a": "保存超时或失败。关闭前修复错误。",
         "46e08bc5c8": "该文件有未保存的更改。",
         "61ed600d29": "“{{value0}}”有未保存的更改。您想在关闭前保存吗？",
-        "cdc9ac4b2d": "编辑"
+        "cdc9ac4b2d": "编辑",
+        "e57db40c11": "Could not build launch command for {{value0}}.",
+        "5b2c1a9e44": "No agent CLI detected — install one or pick a default agent in Settings."
       },
       "TerminalSearch": {
         "db234b7519": "关闭",
@@ -3956,6 +3959,12 @@
           "terminalTitle": "安装 Linear agent 技能",
           "terminalAria": "Linear agent 技能安装 terminal",
           "install": "安装 CLI 和技能",
+          "successTitle": "Linear 议题访问已就绪",
+          "successDescription": "Agent 现在可以从此工作区读取和更新已链接的 Linear 议题。",
+          "successDescriptionWsl": "WSL Agent 现在可以从此工作区使用已链接的 Linear 议题。",
+          "successDescriptionRemote": "主机 Agent 现在可以使用已链接的 Linear 议题。远程 Agent 环境可能仍需要单独设置。",
+          "successStatus": "Linear 议题访问已就绪",
+          "done": "完成",
           "wslCopy": "为已链接 Linear 工作的 WSL agent 交接安装此项。",
           "wslLabel": "WSL 默认值",
           "toastMissingCliAndSkill": "缺少 Orca CLI 和 Linear 技能",
@@ -5018,7 +5027,8 @@
           "9bedd2a6e5": "使 Agent 能够通过 Orca 传递上下文并协调工作。",
           "07641b9768": "编排技能",
           "2aacdb0517": "跨切换、工作树切换和子 Agent 工作协调编码 Agent。",
-          "191ac34567": "Agent 编排"
+          "191ac34567": "Agent 编排",
+          "thisDevice": "This device"
         },
         "OrchestrationSetupCard": {
           "e7d2a5146c": "使 Agent 能够通过 Orca 传递上下文并协调工作。",
@@ -5431,7 +5441,8 @@
           "9abb9be3bc": "初始设置",
           "23c6874fdf": "AI 能力",
           "2309068a6f": "destructive",
-          "65358016ea": "放弃"
+          "65358016ea": "放弃",
+          "thisDevice": "This device"
         },
         "SettingsFormControls": {
           "42a4d15a30": "没有匹配的字体。",
@@ -7515,6 +7526,7 @@
           "colors_only": "Colors only",
           "no_themes_found": "No custom Warp themes found.",
           "builtin_themes_hint": "Warp's preloaded themes are part of the Warp app and can't be read from disk. Orca already includes most of them, like Dracula, Gruvbox, Solarized, and Tokyo Night.",
+          "custom_theme_yaml_hint": "自定义和社区主题必须以 YAML 文件形式存在于 Warp themes 文件夹中，自动导入才能发现它们。如果你克隆了 Warp 的公开主题仓库，请使用 Choose Folder 导入该仓库副本。",
           "choose_manually": "Choose a theme YAML file or folder to import manually.",
           "skipped_files": "Skipped files",
           "more_skipped_files": "{{value0}} more skipped files.",
@@ -7639,6 +7651,19 @@
               }
             }
           }
+        },
+        "computerUseSummary": {
+          "permissionsRequired": "{{value0}} permission{{value1}} required before agents can operate app windows.",
+          "checkingTitle": "Checking Computer Use access.",
+          "checkingDescription": "Orca is checking macOS privacy permissions for the Computer Use helper.",
+          "unavailableTitle": "Computer Use is unavailable.",
+          "unavailableDescription": "Computer Use permissions are unavailable because {{value0}}.",
+          "readyTitle": "Computer Use is ready.",
+          "readyDescription": "Agents can inspect and operate app windows when you ask.",
+          "permissionsTitle": "Finish setup to use local apps."
+        },
+        "computerUseSkillRuntime": {
+          "thisDevice": "This device"
         }
       },
       "right": {

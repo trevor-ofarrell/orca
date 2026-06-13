@@ -274,7 +274,8 @@
           "760bc6883d": "Codex",
           "a5fc0cb622": "OpenClaude",
           "bf53f09bf8": "Claude Agent Teams",
-          "0708ed89f1": "Claude"
+          "0708ed89f1": "Claude",
+          "fc80296033": "Devin"
         },
         "skill": {
           "cli": {
@@ -1551,7 +1552,9 @@
         "a2a279b32a": "저장 시간이 초과되었거나 실패했습니다. 닫기 전에 오류를 수정하세요.",
         "46e08bc5c8": "이 파일에는 저장되지 않은 변경사항이 있습니다.",
         "61ed600d29": "'{{value0}}'에 저장되지 않은 변경사항이 있습니다. 닫기 전에 저장하시겠습니까?",
-        "cdc9ac4b2d": "편집자"
+        "cdc9ac4b2d": "편집자",
+        "e57db40c11": "Could not build launch command for {{value0}}.",
+        "5b2c1a9e44": "No agent CLI detected — install one or pick a default agent in Settings."
       },
       "TerminalSearch": {
         "db234b7519": "닫기",
@@ -3956,6 +3959,12 @@
           "terminalTitle": "Linear agent 스킬 설치",
           "terminalAria": "Linear agent 스킬 설치 terminal",
           "install": "CLI 및 스킬 설치",
+          "successTitle": "Linear 티켓 접근이 준비되었습니다",
+          "successDescription": "이제 agents가 이 워크스페이스에서 연결된 Linear 티켓을 읽고 업데이트할 수 있습니다.",
+          "successDescriptionWsl": "이제 WSL agents가 이 워크스페이스에서 연결된 Linear 티켓을 사용할 수 있습니다.",
+          "successDescriptionRemote": "이제 호스트 agents가 연결된 Linear 티켓을 사용할 수 있습니다. 원격 agent 환경에는 자체 설정이 여전히 필요할 수 있습니다.",
+          "successStatus": "Linear 티켓 접근 준비됨",
+          "done": "완료",
           "wslCopy": "연결된 Linear 작업에서 WSL agent 인계를 위해 설치합니다.",
           "wslLabel": "WSL 기본값",
           "toastMissingCliAndSkill": "Orca CLI와 Linear 스킬이 없습니다",
@@ -5018,7 +5027,8 @@
           "9bedd2a6e5": "agents가 Orca를 통해 컨텍스트를 넘기고 작업을 조정할 수 있습니다.",
           "07641b9768": "오케스트레이션 스킬",
           "2aacdb0517": "핸드오프, 작업 트리 핸드오버, 하위 agents 작업 전반에 걸쳐 코딩 agents를 조정합니다.",
-          "191ac34567": "Agent 오케스트레이션"
+          "191ac34567": "Agent 오케스트레이션",
+          "thisDevice": "This device"
         },
         "OrchestrationSetupCard": {
           "e7d2a5146c": "agents가 Orca를 통해 컨텍스트를 넘기고 작업을 조정할 수 있습니다.",
@@ -5431,7 +5441,8 @@
           "9abb9be3bc": "설정 시작",
           "23c6874fdf": "AI 기능",
           "2309068a6f": "파괴적인",
-          "65358016ea": "버리기"
+          "65358016ea": "버리기",
+          "thisDevice": "This device"
         },
         "SettingsFormControls": {
           "42a4d15a30": "일치하는 글꼴이 없습니다.",
@@ -7515,6 +7526,7 @@
           "colors_only": "Colors only",
           "no_themes_found": "No custom Warp themes found.",
           "builtin_themes_hint": "Warp's preloaded themes are part of the Warp app and can't be read from disk. Orca already includes most of them, like Dracula, Gruvbox, Solarized, and Tokyo Night.",
+          "custom_theme_yaml_hint": "사용자 지정 및 커뮤니티 테마는 자동 가져오기가 찾을 수 있도록 Warp themes 폴더에 YAML 파일로 있어야 합니다. Warp의 공개 테마 저장소를 클론했다면 Choose Folder를 사용해 해당 체크아웃을 가져오세요.",
           "choose_manually": "Choose a theme YAML file or folder to import manually.",
           "skipped_files": "Skipped files",
           "more_skipped_files": "{{value0}} more skipped files.",
@@ -7639,6 +7651,19 @@
               }
             }
           }
+        },
+        "computerUseSummary": {
+          "permissionsRequired": "{{value0}} permission{{value1}} required before agents can operate app windows.",
+          "checkingTitle": "Checking Computer Use access.",
+          "checkingDescription": "Orca is checking macOS privacy permissions for the Computer Use helper.",
+          "unavailableTitle": "Computer Use is unavailable.",
+          "unavailableDescription": "Computer Use permissions are unavailable because {{value0}}.",
+          "readyTitle": "Computer Use is ready.",
+          "readyDescription": "Agents can inspect and operate app windows when you ask.",
+          "permissionsTitle": "Finish setup to use local apps."
+        },
+        "computerUseSkillRuntime": {
+          "thisDevice": "This device"
         }
       },
       "right": {
