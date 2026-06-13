@@ -22,6 +22,8 @@ export const MIN_COMPATIBLE_RUNTIME_CLIENT_VERSION = 2
 export const MIN_COMPATIBLE_RUNTIME_SERVER_VERSION = 2
 
 export const PROJECT_HOST_SETUP_RUNTIME_CAPABILITY = 'project-host-setup.v1' as const
+export const TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY = 'task-source-context.v1' as const
+export const WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY = 'workspace-run-context.v1' as const
 
 export const RUNTIME_CAPABILITIES = [
   'runtime.status.compat.v1',
@@ -31,7 +33,9 @@ export const RUNTIME_CAPABILITIES = [
   'terminal.multiplex.v1',
   'workspace-ports.v1',
   'mobile.tasks.v1',
-  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY
+  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+  TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY,
+  WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
 ] as const
 
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number] | (string & {})

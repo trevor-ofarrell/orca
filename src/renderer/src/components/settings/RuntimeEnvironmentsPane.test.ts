@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
   MIN_COMPATIBLE_RUNTIME_SERVER_VERSION,
-  RUNTIME_PROTOCOL_VERSION
+  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+  RUNTIME_PROTOCOL_VERSION,
+  TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY,
+  WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
 } from '../../../../shared/protocol-version'
 import {
   evaluateHostDetails,
   getActiveServerModeDescription,
   getHostDetailsDescription,
   getHostDetailsSummary,
+  getHostModelCapabilitySummary,
   getRuntimeCapabilitiesSummary,
   type RuntimeHostDetails
 } from './RuntimeEnvironmentsPane'
@@ -127,6 +131,47 @@ describe('RuntimeEnvironmentsPane host details', () => {
         ]
       })
     ).toBe('runtime.environments.v1, browser.screencast.v1, terminal.multiplex.v1 +1')
+  })
+
+  it('summarizes Host model capability support for version-skewed servers', () => {
+    expect(
+      getHostModelCapabilitySummary({
+        runtimeId: 'runtime',
+        rendererGraphEpoch: 1,
+        graphStatus: 'ready',
+        authoritativeWindowId: 1,
+        liveTabCount: 0,
+        liveLeafCount: 0
+      })
+    ).toBe('Host model support: checking server capabilities')
+
+    expect(
+      getHostModelCapabilitySummary({
+        runtimeId: 'runtime',
+        rendererGraphEpoch: 1,
+        graphStatus: 'ready',
+        authoritativeWindowId: 1,
+        liveTabCount: 0,
+        liveLeafCount: 0,
+        capabilities: [
+          PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+          TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY,
+          WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+        ]
+      })
+    ).toBe('Host model support: ready')
+
+    expect(
+      getHostModelCapabilitySummary({
+        runtimeId: 'runtime',
+        rendererGraphEpoch: 1,
+        graphStatus: 'ready',
+        authoritativeWindowId: 1,
+        liveTabCount: 0,
+        liveLeafCount: 0,
+        capabilities: [PROJECT_HOST_SETUP_RUNTIME_CAPABILITY]
+      })
+    ).toBe('Host model support: update server for task source context, workspace run context')
   })
 
   it('explains that selecting a saved server is the explicit default Host mode', () => {

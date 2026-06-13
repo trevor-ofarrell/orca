@@ -98,7 +98,7 @@ Done means: settings pages no longer imply one global provider/account when the 
 - [~] Audit caches keyed by repo id, path, owner/repo, or active runtime and add host/source identity where needed.
 - [~] Ensure request ownership is explicit for provider fetches, provider mutations, file-system calls, git calls, terminal calls, and automation runs.
 - [~] Add capability negotiation for remote servers so new clients can degrade gracefully with older servers.
-- [~] Add version-skew UX for unsupported source-context or host-context APIs.
+- [x] Add version-skew UX for unsupported source-context or host-context APIs.
 - [x] Ensure SSH hosts and remote servers expose comparable availability/health states to the UI.
 - [x] Keep future cloud VM support as a host capability model, not a separate user-facing mental model.
 
@@ -246,3 +246,4 @@ Done means: reviewers and future agents can understand the vision, implementatio
 - [x] 2026-06-12: Preserved explicit automation run-host context in CLI project selectors: `orca automations create/edit --project/--host` and `--project-host-setup` now send `WorkspaceRunContext` alongside the legacy repo selector, so scheduled runs retain logical project, host, setup, repo, and path identity. Verified with focused CLI regressions (108 tests), targeted oxlint, full `pnpm run typecheck`, and `git diff --check`.
 - [x] 2026-06-12: Added an advanced automation CLI source selector via `--source-context <json|null>` for create/edit, normalizing the shared `TaskSourceContext` shape before RPC and allowing edit callers to clear the source context with `null`; verified with focused CLI regressions (111 tests), targeted oxlint, full `pnpm run typecheck`, and `git diff --check`.
 - [x] 2026-06-12: Added a reusable Tasks source availability notice and wired unavailable source-host/account states into the Tasks source chrome, so disconnected/auth-needed/blocked hosts show an inline status, fully unavailable sources disable their icon, and partial multi-host failures remain selectable with warning copy; verified with focused source-summary tests, targeted oxlint, and full `pnpm run typecheck`.
+- [x] 2026-06-12: Added explicit remote-runtime Host model capability names for project setup, task source context, and workspace run context, then surfaced a Settings saved-server summary that says whether Host model support is ready, unknown, or requires a server update for specific missing capabilities; verified with focused RuntimeEnvironmentsPane tests, targeted oxlint, and full `pnpm run typecheck`.

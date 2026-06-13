@@ -15,7 +15,10 @@ import {
 } from '../../../../shared/protocol-compat'
 import {
   MIN_COMPATIBLE_RUNTIME_SERVER_VERSION,
-  RUNTIME_PROTOCOL_VERSION
+  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+  RUNTIME_PROTOCOL_VERSION,
+  TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY,
+  WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
 } from '../../../../shared/protocol-version'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -108,6 +111,60 @@ export function getRuntimeCapabilitiesSummary(status: RuntimeStatus | null | und
   const visibleCapabilities = capabilities.slice(0, 3).join(', ')
   const hiddenCount = capabilities.length - 3
   return hiddenCount > 0 ? `${visibleCapabilities} +${hiddenCount}` : visibleCapabilities
+}
+
+export function getHostModelCapabilitySummary(
+  status: RuntimeStatus | null | undefined
+): string | null {
+  if (!status) {
+    return null
+  }
+  const capabilities = status.capabilities
+  if (!capabilities) {
+    return translate(
+      'auto.components.settings.RuntimeEnvironmentsPane.hostModelCapabilityUnknown',
+      'Host model support: checking server capabilities'
+    )
+  }
+  const missing = [
+    PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+    TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY,
+    WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+  ].filter((capability) => !capabilities.includes(capability))
+  if (missing.length === 0) {
+    return translate(
+      'auto.components.settings.RuntimeEnvironmentsPane.hostModelCapabilitySupported',
+      'Host model support: ready'
+    )
+  }
+  const missingLabels = missing.map(getHostModelCapabilityLabel)
+  return translate(
+    'auto.components.settings.RuntimeEnvironmentsPane.hostModelCapabilityMissing',
+    'Host model support: update server for {{value0}}',
+    { value0: missingLabels.join(', ') }
+  )
+}
+
+function getHostModelCapabilityLabel(capability: string): string {
+  switch (capability) {
+    case PROJECT_HOST_SETUP_RUNTIME_CAPABILITY:
+      return translate(
+        'auto.components.settings.RuntimeEnvironmentsPane.hostModelCapabilityProjectSetup',
+        'project setup'
+      )
+    case TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY:
+      return translate(
+        'auto.components.settings.RuntimeEnvironmentsPane.hostModelCapabilityTaskSourceContext',
+        'task source context'
+      )
+    case WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY:
+      return translate(
+        'auto.components.settings.RuntimeEnvironmentsPane.hostModelCapabilityWorkspaceRunContext',
+        'workspace run context'
+      )
+    default:
+      return capability
+  }
 }
 
 export function getActiveServerModeDescription(allowLocalRuntime: boolean): string {
@@ -715,6 +772,7 @@ export function RuntimeEnvironmentsPane({
                                   }
                                 )}
                               </span>
+                              <span>{getHostModelCapabilitySummary(details.runtimeStatus)}</span>
                             </>
                           ) : detailsDescription ? (
                             <span className="truncate text-destructive">{detailsDescription}</span>
