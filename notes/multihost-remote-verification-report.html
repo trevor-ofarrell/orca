@@ -125,6 +125,47 @@
         <h2>Flows Verified</h2>
         <ul>
           <li class="pass">
+            Live 2026-06-13 branch validation ran against
+            <code>Jinwoo-H/feature-control-multiple-orca-servers-concurrent</code> with CDP
+            <code>9337</code> and renderer <code>localhost:5175</code>. App identity confirmed the
+            correct worktree before testing.
+          </li>
+          <li class="pass">
+            Added a fresh manual SSH target <code>Host model Docker SSH</code> for Docker container
+            <code>orca-ssh-test</code> on <code>127.0.0.1:2222</code>, using a temporary key
+            authorized only in the throwaway container. Orca's <code>ssh.connect</code> returned
+            <code>connected</code> after deploying the relay.
+          </li>
+          <li class="pass">
+            Added remote Git project <code>/home/orca/host-context-clone-source</code> through
+            <code>repos.addRemote</code>. Store evidence showed
+            <code>executionHostId: ssh:ssh-1781343742503-ijey0z</code>, a ready SSH
+            <code>ProjectHostSetup</code>, and a host-scoped main worktree.
+          </li>
+          <li class="pass">
+            Created a new SSH workspace from that project at
+            <code>/home/orca/host-model-verify-1781343787503</code>. The resulting worktree carried
+            explicit <code>hostId</code>, <code>projectId</code>, and
+            <code>projectHostSetupId</code>, and the visible terminal tab showed the remote shell
+            path.
+          </li>
+          <li class="pass">
+            Disconnected the Docker SSH target and verified visible UX: the active SSH workspace
+            opens an <code>SSH Disconnected</code> dialog with the host label and reconnect action,
+            the sidebar still shows the project/workspaces, and creating another workspace for that
+            project is disabled with reconnect copy.
+          </li>
+          <li class="pass">
+            Opened Tasks after disconnect. GitHub PRs rendered with the local authenticated source
+            while the sidebar still showed the disconnected SSH project state, covering mixed
+            task-source and run-host visibility in one screen.
+          </li>
+          <li class="pass">
+            Opened Automations after disconnect. SSH external automation source rows, including the
+            Docker target, were disabled with explicit <code>SSH target is not connected</code> copy
+            and <code>Connect SSH</code> actions.
+          </li>
+          <li class="pass">
             Linked local <code>/tmp/orca-host-context-local-project</code> and SSH
             <code>/home/orca/orca-host-context-remote-project</code> copies into one logical
             <code>github:stablyai/orca</code> project.
@@ -228,6 +269,11 @@
             <code>pnpm run typecheck</code> pass.
           </li>
           <li class="pass">
+            Live 2026-06-13 validation additionally ran <code>pnpm build:relay</code>, connected a
+            Docker SSH target through Orca IPC, added an SSH project, created an SSH worktree, tested
+            disconnected SSH UX, opened Tasks, opened Automations, and captured screenshots below.
+          </li>
+          <li class="pass">
             Focused locked-SSH Add Project regression test passed:
             <code>src/renderer/src/components/sidebar/AddRepoDialogStepContent.test.tsx</code>,
             9 tests.
@@ -249,6 +295,26 @@
         <figure>
           <img src="artifacts/host-context-sidebar-after-link.png" alt="Linked local and SSH project" />
           <figcaption>One logical project after local + SSH setup linking.</figcaption>
+        </figure>
+        <figure>
+          <img src="artifacts/current-host-model-app-home.png" alt="Current branch app identity" />
+          <figcaption>Current branch dev app attached through CDP 9337 before live verification.</figcaption>
+        </figure>
+        <figure>
+          <img src="artifacts/host-context-live-ssh-workspace-active.png" alt="Active SSH workspace from live verification" />
+          <figcaption>Live verification: active SSH workspace with remote terminal path and SSH project/workspaces in the sidebar.</figcaption>
+        </figure>
+        <figure>
+          <img src="artifacts/host-context-live-ssh-disconnected-active.png" alt="Disconnected SSH workspace from live verification" />
+          <figcaption>Live verification: disconnecting the active SSH host shows a reconnect dialog for the selected host.</figcaption>
+        </figure>
+        <figure>
+          <img src="artifacts/host-context-live-tasks-settled.png" alt="Tasks with disconnected SSH project visible" />
+          <figcaption>Live verification: Tasks renders GitHub PRs while the sidebar keeps the disconnected SSH project disabled.</figcaption>
+        </figure>
+        <figure>
+          <img src="artifacts/host-context-live-automations-after-ssh-disconnect.png" alt="Automations disconnected SSH source rows" />
+          <figcaption>Live verification: Automations rows for SSH external sources are disabled with explicit connect actions.</figcaption>
         </figure>
         <figure>
           <img src="artifacts/host-context-live-after-worktree-meta-repair.png" alt="Live metadata repair" />

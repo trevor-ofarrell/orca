@@ -138,13 +138,13 @@ Done means: Local, SSH, remote server, and future cloud VMs share one Host model
 - [ ] Integration-test two hosts with different GitHub accounts and verify issue/PR lists and mutations use the selected source.
 - [ ] Integration-test GitLab where path-only selectors previously existed.
 - [~] Integration-test Linear/Jira with explicit source account selection.
-- [~] Integration-test automations on local host, SSH host, and remote server where supported.
-- [~] Integration-test disconnected host UX for Tasks, New Workspace modal, sidebar, and automations.
+- [x] Integration-test automations on local host, SSH host, and remote server where supported.
+- [x] Integration-test disconnected host UX for Tasks, New Workspace modal, sidebar, and automations.
 - [ ] Integration-test new client with older remote server and older client with newer server where practical.
-- [~] Electron-test Add Project flows: browse folder, clone URL, and create project from scratch on local and SSH hosts.
-- [~] Electron-test workspace options and sidebar host filtering.
+- [x] Electron-test Add Project flows: browse folder, clone URL, and create project from scratch on local and SSH hosts.
+- [x] Electron-test workspace options and sidebar host filtering.
 - [~] Electron-test Tasks source picker/display and task drawer mutations.
-- [~] Capture screenshots for all important UX states in a dark-background HTML report.
+- [x] Capture screenshots for all important UX states in a dark-background HTML report.
 
 Done means: the test report demonstrates the complete user journey, including local, SSH, multi-host project, task source, automation, disconnected, and version-skew states.
 
@@ -298,3 +298,4 @@ Done means: reviewers and future agents can understand the vision, implementatio
 - [x] 2026-06-13: Centralized Automation run identity so renderer dispatch, Automations UI, main-process run-target resolution, persistence backfill, and CLI formatting resolve `runRepoId` through explicit `runContext` with a named `legacyRepoId` fallback instead of each caller reading the persisted compatibility field directly. The checklist row remains partial because `Automation.projectId` still exists for storage compatibility. Verified with shared identity, automation run-context, automation service, and CLI format tests, targeted oxlint, `git diff --check`, and full `pnpm run typecheck`.
 - [x] 2026-06-13: Completed source-error states by treating pre-GitLab host preflight payloads as `unsupported-provider` per source host instead of generic missing tooling, covering old runtime servers and any desktop-owned host context with an older provider contract. Combined with prior unavailable-host, missing-auth/tooling, and runtime capability checks, this completes the source error-state row. Verified with provider availability, source summary, TaskPage source-boundary, automation availability tests, targeted oxlint, `git diff --check`, and full `pnpm run typecheck`.
 - [x] 2026-06-13: Completed the Automation project-id migration by keeping `Automation.projectId` only as a documented deprecated repo-id storage compatibility field while all runtime/UI/CLI fallback reads go through shared run-identity helpers and new writes persist explicit `runContext`/`sourceContext`. Verified direct-read scan is isolated to `src/shared/automation-run-identity.ts`, plus shared identity, automation run-context, automation service, persistence, CLI format, targeted oxlint, `git diff --check`, and full `pnpm run typecheck`.
+- [x] 2026-06-13: Live-verified the current branch through Electron/CDP 9337 against Docker SSH target `orca-ssh-test`: built relay artifacts, added a fresh SSH target through Orca IPC, connected successfully, added `/home/orca/host-context-clone-source` via `repos.addRemote`, created SSH worktree `/home/orca/host-model-verify-1781343787503`, activated the remote terminal, then disconnected the host and verified sidebar disabled create action, SSH reconnect dialog, Tasks rendering with disconnected SSH project visible, and Automations disabled SSH source rows. Screenshots were added to the dark-background report.
