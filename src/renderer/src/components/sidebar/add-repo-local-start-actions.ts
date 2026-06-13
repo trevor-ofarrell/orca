@@ -9,7 +9,7 @@ export type AddRepoLocalStartActionHandlers = {
   onOpenCreateStep: () => void
   showRemoteAction?: boolean
   canCreateProject?: boolean
-  browseHostKind?: 'local' | 'ssh'
+  browseHostKind?: 'local' | 'ssh' | 'runtime'
 }
 
 export type AddRepoLocalStartAction = {
@@ -53,10 +53,15 @@ export function getAddRepoLocalStartActions({
             'auto.components.sidebar.add.repo.local.start.actions.sshBrowseDescription',
             'Existing Git repository or folder on this SSH host'
           )
-        : translate(
-            'auto.components.sidebar.add.repo.local.start.actions.fb4fc5380e',
-            'Local project, Git repo, or folder with many repos'
-          ),
+        : browseHostKind === 'runtime'
+          ? translate(
+              'auto.components.sidebar.add.repo.local.start.actions.runtimeBrowseDescription',
+              'Existing Git repository or folder on this host'
+            )
+          : translate(
+              'auto.components.sidebar.add.repo.local.start.actions.fb4fc5380e',
+              'Local project, Git repo, or folder with many repos'
+            ),
     onClick: onBrowse
   }
 

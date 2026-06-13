@@ -69,7 +69,7 @@ type AddRepoLocalStartStepProps = {
   hostSelector?: ReactNode
   showRemoteAction?: boolean
   canCreateProject?: boolean
-  browseHostKind?: 'local' | 'ssh'
+  browseHostKind?: 'local' | 'ssh' | 'runtime'
   onBrowse: () => void
   onOpenCloneStep: () => void
   onOpenRemoteStep: () => void

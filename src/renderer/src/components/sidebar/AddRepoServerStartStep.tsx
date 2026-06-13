@@ -13,6 +13,7 @@ type AddRepoServerPathStartStepProps = {
   isAddingServerPath: boolean
   addProjectBusyLabel: string | null
   hostSelector?: ReactNode
+  initialBrowsing?: boolean
   onServerPathChange: (path: string) => void
   onAddServerPath: (kind: 'git' | 'folder') => void
   onOpenCloneStep: () => void
@@ -25,13 +26,14 @@ export function AddRepoServerPathStartStep({
   isAddingServerPath,
   addProjectBusyLabel,
   hostSelector,
+  initialBrowsing = false,
   onServerPathChange,
   onAddServerPath,
   onOpenCloneStep,
   onOpenCreateStep
 }: AddRepoServerPathStartStepProps): React.JSX.Element {
-  const [browsing, setBrowsing] = useState(false)
-  const [pathEntryOpen, setPathEntryOpen] = useState(false)
+  const [browsing, setBrowsing] = useState(initialBrowsing)
+  const [pathEntryOpen, setPathEntryOpen] = useState(initialBrowsing)
 
   if (browsing && runtimeEnvironmentId) {
     return (

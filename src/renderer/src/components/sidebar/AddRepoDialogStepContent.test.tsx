@@ -256,4 +256,21 @@ describe('AddRepoDialogStepContent nested imports', () => {
     expect(html).toContain('Existing Git repository or folder on this SSH host')
     expect(html).not.toContain('Local project, Git repo, or folder with many repos')
   })
+
+  it('uses the standard add step for remote Orca server hosts', () => {
+    const html = renderStepContent({
+      step: 'add',
+      isRuntimeEnvironmentActive: true,
+      activeRuntimeEnvironmentId: 'env-1',
+      browseHostKind: 'runtime'
+    })
+
+    expect(html).toContain('Browse folder')
+    expect(html).toContain('Existing Git repository or folder on this host')
+    expect(html).toContain('Clone from URL')
+    expect(html).toContain('Create new project')
+    expect(html).not.toContain('Browse host')
+    expect(html).not.toContain('Create on host')
+    expect(html).not.toContain('Want to import many repos at once?')
+  })
 })

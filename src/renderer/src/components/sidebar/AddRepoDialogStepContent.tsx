@@ -48,7 +48,7 @@ type AddRepoDialogStepContentProps = {
   showRemoteAction?: boolean
   canCreateProject?: boolean
   manualCreateParentEntry?: boolean
-  browseHostKind?: 'local' | 'ssh'
+  browseHostKind?: 'local' | 'ssh' | 'runtime'
   createDefaultParent: string
   createGitAvailability: GitAvailability
   createRuntimeParentStatus: 'idle' | 'checking' | 'failed'
@@ -149,22 +149,6 @@ export function AddRepoDialogStepContent({
   onPickCreateParent,
   onCreate
 }: AddRepoDialogStepContentProps): React.JSX.Element | null {
-  if (step === 'add' && isRuntimeEnvironmentActive) {
-    return (
-      <AddRepoServerPathStartStep
-        serverPath={serverPath}
-        runtimeEnvironmentId={activeRuntimeEnvironmentId}
-        isAddingServerPath={isAddingServerPath}
-        addProjectBusyLabel={addProjectBusyLabel}
-        hostSelector={hostSelector}
-        onServerPathChange={onServerPathChange}
-        onAddServerPath={onAddServerPath}
-        onOpenCloneStep={onOpenCloneStep}
-        onOpenCreateStep={onOpenCreateStep}
-      />
-    )
-  }
-
   if (step === 'add') {
     return (
       <AddRepoLocalStartStep
@@ -183,6 +167,23 @@ export function AddRepoDialogStepContent({
         onOpenRemoteStep={onOpenRemoteStep}
         onOpenCreateStep={onOpenCreateStep}
         onStopNestedScan={onStopNestedScan}
+      />
+    )
+  }
+
+  if (step === 'server-path') {
+    return (
+      <AddRepoServerPathStartStep
+        serverPath={serverPath}
+        runtimeEnvironmentId={activeRuntimeEnvironmentId}
+        isAddingServerPath={isAddingServerPath}
+        addProjectBusyLabel={addProjectBusyLabel}
+        hostSelector={hostSelector}
+        initialBrowsing
+        onServerPathChange={onServerPathChange}
+        onAddServerPath={onAddServerPath}
+        onOpenCloneStep={onOpenCloneStep}
+        onOpenCreateStep={onOpenCreateStep}
       />
     )
   }

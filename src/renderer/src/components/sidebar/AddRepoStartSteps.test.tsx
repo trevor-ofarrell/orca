@@ -140,6 +140,26 @@ function getHostAwareActionModel(): {
   }
 }
 
+function getRuntimeHostActionModel(): {
+  primary: string
+  description: string
+} {
+  const { primaryAction } = getAddRepoLocalStartActions({
+    isSshLikely: false,
+    showRemoteAction: false,
+    browseHostKind: 'runtime',
+    onBrowse: vi.fn(),
+    onOpenCloneStep: vi.fn(),
+    onOpenRemoteStep: vi.fn(),
+    onOpenCreateStep: vi.fn()
+  })
+
+  return {
+    primary: primaryAction.title,
+    description: primaryAction.description
+  }
+}
+
 describe('AddRepoLocalStartStep', () => {
   afterEach(() => {
     document.body.innerHTML = ''
@@ -160,7 +180,11 @@ describe('AddRepoLocalStartStep', () => {
     const titles = getActionTitles(false)
 
     expect(titles.primary).toBe('Browse folder')
-    expect(titles.secondary).toEqual(['Clone from URL', 'Project on SSH host', 'Create new project'])
+    expect(titles.secondary).toEqual([
+      'Clone from URL',
+      'Project on SSH host',
+      'Create new project'
+    ])
   })
 
   it('keeps Browse folder primary for SSH-likely users', () => {
@@ -176,7 +200,11 @@ describe('AddRepoLocalStartStep', () => {
     const titles = getActionTitles(true)
 
     expect(titles.primary).toBe('Browse folder')
-    expect(titles.secondary).toEqual(['Project on SSH host', 'Clone from URL', 'Create new project'])
+    expect(titles.secondary).toEqual([
+      'Project on SSH host',
+      'Clone from URL',
+      'Create new project'
+    ])
   })
 
   it('lets host-aware Add Project replace the separate remote row', () => {
@@ -184,6 +212,13 @@ describe('AddRepoLocalStartStep', () => {
 
     expect(model.secondary).toEqual(['Clone from URL', 'Create new project'])
     expect(model.createDisabled).toBe(false)
+  })
+
+  it('uses host-neutral browse copy for runtime hosts', () => {
+    const model = getRuntimeHostActionModel()
+
+    expect(model.primary).toBe('Browse folder')
+    expect(model.description).toBe('Existing Git repository or folder on this host')
   })
 
   it('focuses Browse folder when the default Add Project step opens', async () => {

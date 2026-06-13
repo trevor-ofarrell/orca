@@ -163,6 +163,7 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
   const droppedLocalPath =
     typeof modalData.droppedLocalPath === 'string' ? modalData.droppedLocalPath : ''
   const isRuntimeEnvironmentActive = Boolean(selectedRuntimeEnvironmentId)
+  const selectedHostKind = hostSelection.selectedParsedHost?.kind
   const { handleBrowse, resetLocalFolderFlow } = useAddRepoLocalFolderFlow({
     isOpen,
     droppedLocalPath,
@@ -329,18 +330,20 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
         isCreating={isCreating}
         hostSelector={<AddRepoHostSelectorSlot hostSelection={hostSelection} />}
         showRemoteAction={false}
-        browseHostKind={hostSelection.selectedParsedHost?.kind === 'ssh' ? 'ssh' : 'local'}
+        browseHostKind={
+          selectedHostKind === 'ssh' || selectedHostKind === 'runtime' ? selectedHostKind : 'local'
+        }
         createDefaultParent={createDefaultParent}
         createGitAvailability={createGitAvailability}
         createRuntimeParentStatus={createRuntimeParentStatus}
         createParentDefaultPending={createParentDefaultPending}
-        manualCreateParentEntry={
-          isRuntimeEnvironmentActive || hostSelection.selectedParsedHost?.kind === 'ssh'
-        }
+        manualCreateParentEntry={isRuntimeEnvironmentActive || selectedHostKind === 'ssh'}
         onBrowse={
-          hostSelection.selectedParsedHost?.kind === 'ssh'
+          selectedHostKind === 'ssh'
             ? () => void handleOpenRemoteStep(hostSelection.selectedSshTargetId)
-            : handleBrowse
+            : selectedHostKind === 'runtime'
+              ? () => setStep('server-path')
+              : handleBrowse
         }
         onOpenCloneStep={() => {
           setCloneError(null)
