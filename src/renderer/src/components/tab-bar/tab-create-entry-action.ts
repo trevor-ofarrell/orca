@@ -42,6 +42,7 @@ export type TabEntryOperations = {
     url: string,
     options?: {
       activate?: boolean
+      browserRuntimeEnvironmentId?: string | null
       targetGroupId?: string
       title?: string
     }
@@ -147,18 +148,26 @@ export async function openTabEntryWithOperations({
   }
 
   if (classification.kind === 'explicit-url' || classification.kind === 'host-url') {
-    if (
-      operations.isWebRuntimeSessionActive(activeRuntimeEnvironmentId) &&
-      !(await operations.createWebRuntimeSessionBrowserTab({
+    const runtimeSessionActive = operations.isWebRuntimeSessionActive(activeRuntimeEnvironmentId)
+    if (runtimeSessionActive) {
+      const created = await operations.createWebRuntimeSessionBrowserTab({
         worktreeId,
         environmentId: activeRuntimeEnvironmentId,
         url: classification.url,
         targetGroupId: groupId
-      }))
-    ) {
-      throw new Error('Failed to create browser tab.')
-    }
-    if (!operations.isWebRuntimeSessionActive(activeRuntimeEnvironmentId)) {
+      })
+      if (created) {
+        return
+      }
+      // Why: headless remote runtimes cannot host browser panes yet; a URL open
+      // should still give the user a usable client-local browser tab.
+      operations.createBrowserTab(worktreeId, classification.url, {
+        activate: true,
+        browserRuntimeEnvironmentId: null,
+        targetGroupId: groupId,
+        title: classification.url
+      })
+    } else {
       operations.createBrowserTab(worktreeId, classification.url, {
         activate: true,
         targetGroupId: groupId,

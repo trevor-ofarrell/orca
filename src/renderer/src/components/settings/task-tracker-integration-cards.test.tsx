@@ -108,9 +108,9 @@ describe('LinearIntegrationCard account scope', () => {
 
     expect(rendered.textContent).toContain('Account scope: Local Mac')
     expect(rendered.textContent).toContain(
-      'Credentials and account checks for this provider are owned by this desktop client. Choose a remote Host from Settings > Active Server to edit server-owned credentials.'
+      'Credentials and account checks for this provider are owned by this desktop client. Use Settings > Remote Orca Servers > Advanced to edit server-owned credentials.'
     )
-    expect(rendered.textContent).toContain('Change Host')
+    expect(rendered.textContent).toContain('Open Remote Servers')
     expect(rendered.textContent).toContain('Add access with a Personal API key')
 
     await act(async () => {
@@ -129,15 +129,19 @@ describe('LinearIntegrationCard account scope', () => {
 
     expect(rendered.textContent).toContain('Account scope: Remote server: runtime-1')
     expect(rendered.textContent).toContain(
-      'Credentials and account checks for this provider are owned by this remote server. Choose a different Host from Settings > Active Server to edit another account scope.'
+      'Credentials and account checks for this provider are owned by this remote server. Use Settings > Remote Orca Servers > Advanced to edit another default runtime scope.'
     )
     await act(async () => {
       Array.from(rendered.querySelectorAll('button'))
-        .find((button) => button.textContent === 'Change Host')
+        .find((button) => button.textContent === 'Open Remote Servers')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(state.openSettingsPage).toHaveBeenCalledTimes(1)
-    expect(state.openSettingsTarget).toHaveBeenCalledWith({ pane: 'servers', repoId: null })
+    expect(state.openSettingsTarget).toHaveBeenCalledWith({
+      pane: 'servers',
+      repoId: null,
+      sectionId: 'default-runtime'
+    })
     expect(rendered.textContent).toContain('Acme')
     expect(rendered.textContent).toContain('Acme workspace · linear@example.test')
 

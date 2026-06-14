@@ -2852,11 +2852,18 @@ export class OrcaRuntimeService {
       if (shouldMaterializePendingTerminal) {
         const sessionId = tab.ptyId ?? tab.parentLayout?.ptyIdsByLeafId?.[tab.leafId] ?? undefined
         try {
-          await this.createHeadlessMobileSessionTerminal(worktreeId, true, undefined, undefined, {
-            tabId: tab.parentTabId,
-            leafId: tab.leafId,
-            sessionId
-          })
+          await this.createHeadlessMobileSessionTerminal(
+            worktreeId,
+            true,
+            undefined,
+            undefined,
+            {
+              tabId: tab.parentTabId,
+              leafId: tab.leafId,
+              sessionId
+            },
+            tab.launchAgent
+          )
         } catch (err) {
           if (sessionId && parseAppSshPtyId(sessionId)) {
             // Why: an expired SSH reattach clears durable bindings in the store,
@@ -11702,7 +11709,9 @@ export class OrcaRuntimeService {
         worktreeId,
         opts.activate !== false,
         opts.afterTabId,
-        command
+        command,
+        undefined,
+        opts.agent
       )
     }
     const requestId = randomUUID()
@@ -11787,7 +11796,8 @@ export class OrcaRuntimeService {
     activate: boolean,
     afterTabId?: string,
     command?: string,
-    identity?: { tabId: string; leafId: string; sessionId?: string }
+    identity?: { tabId: string; leafId: string; sessionId?: string },
+    launchAgent?: TuiAgent
   ): Promise<RuntimeMobileSessionCreateTerminalResult> {
     const worktree = await this.resolveWorktreeSelector(`id:${worktreeId}`)
     const repo = this.store?.getRepo(worktree.repoId)
@@ -11835,6 +11845,7 @@ export class OrcaRuntimeService {
       leafId,
       ptyId: livePty.pty.ptyId,
       title: terminal.title ?? livePty.pty.title ?? 'Terminal',
+      ...(launchAgent ? { launchAgent } : {}),
       parentLayout,
       isActive: activate
     }
@@ -13806,6 +13817,7 @@ export class OrcaRuntimeService {
         title,
         ...(tab.ptyId ? { ptyId: tab.ptyId } : {}),
         ...(tab.terminalTheme ? { terminalTheme: tab.terminalTheme } : {}),
+        ...(tab.launchAgent ? { launchAgent: tab.launchAgent } : {}),
         ...(agentStatus ?? this.buildPtyMobileAgentStatus(livePty ?? pty, tab, terminalHandle)),
         ...(tab.parentLayout ? { parentLayout: tab.parentLayout } : {}),
         isActive: tab.isActive,
@@ -13883,6 +13895,7 @@ export class OrcaRuntimeService {
         stateStartedAt: now,
         paneKey: this.getMobileTerminalPaneKey(tab),
         ...(terminalHandle ? { terminalHandle } : {}),
+        ...(tab.launchAgent ? { agentType: tab.launchAgent } : {}),
         worktreeId: pty.worktreeId,
         tabId: tab.parentTabId,
         terminalTitle: getLatestPtyTitle(pty) ?? tab.title,

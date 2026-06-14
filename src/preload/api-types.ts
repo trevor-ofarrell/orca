@@ -2476,6 +2476,9 @@ export type PreloadApi = {
     }) => Promise<{ environment: PublicKnownRuntimeEnvironment }>
     resolve: (args: { selector: string }) => Promise<PublicKnownRuntimeEnvironment>
     remove: (args: { selector: string }) => Promise<{ removed: PublicKnownRuntimeEnvironment }>
+    disconnect: (args: {
+      selector: string
+    }) => Promise<{ disconnected: PublicKnownRuntimeEnvironment }>
     getStatus: (args: {
       selector: string
       timeoutMs?: number

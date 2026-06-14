@@ -194,6 +194,27 @@ describe('createBrowserSlice annotations', () => {
     expect(store.getState().activeBrowserTabIdByWorktree['wt-1']).toBeNull()
   })
 
+  it('uses local browser profile defaults for client-local fallback pages', () => {
+    const store = createTestStore()
+    store.setState({
+      settings: settingsWithRuntime('env-1'),
+      defaultBrowserSessionProfileIdByHostId: {
+        local: 'local-profile',
+        'runtime:env-1': 'runtime-profile'
+      }
+    })
+
+    const localFallback = store.getState().createBrowserTab('wt-1', 'about:blank', {
+      browserRuntimeEnvironmentId: null
+    })
+    const remoteTab = store.getState().createBrowserTab('wt-1', 'about:blank', {
+      browserRuntimeEnvironmentId: 'env-1'
+    })
+
+    expect(localFallback.sessionProfileId).toBe('local-profile')
+    expect(remoteTab.sessionProfileId).toBe('runtime-profile')
+  })
+
   it('preserves browser map references when a page-state update is unchanged', () => {
     const store = createTestStore()
     const tab = store.getState().createBrowserTab('wt-1', 'https://example.com', {
@@ -653,7 +674,7 @@ describe('createBrowserSlice runtime guard', () => {
     expect(store.getState().recordFeatureInteraction).toHaveBeenCalledWith('browser-tab-created')
   })
 
-  it('does not create a local fallback tab when runtime browser creation fails', async () => {
+  it('creates a local fallback tab when runtime browser creation fails', async () => {
     const store = createTestStore()
     createWebRuntimeSessionBrowserTabMock.mockResolvedValueOnce(false)
     store.setState({
@@ -669,11 +690,19 @@ describe('createBrowserSlice runtime guard', () => {
       url: 'about:blank',
       targetGroupId: 'group-1'
     })
-    expect(store.getState().createUnifiedTab).not.toHaveBeenCalled()
-    expect(store.getState().browserTabsByWorktree['wt-remote']).toBeUndefined()
-    expect(store.getState().recordFeatureInteraction).not.toHaveBeenCalledWith(
-      'browser-tab-created'
+    expect(store.getState().createUnifiedTab).toHaveBeenCalledWith(
+      'wt-remote',
+      'browser',
+      expect.objectContaining({ targetGroupId: 'group-1' })
     )
+    const [tab] = store.getState().browserTabsByWorktree['wt-remote'] ?? []
+    expect(tab).toBeDefined()
+    expect(store.getState().browserPagesByWorkspace[tab!.id]?.[0]).toMatchObject({
+      browserRuntimeEnvironmentId: null,
+      url: 'about:blank',
+      title: 'New Tab'
+    })
+    expect(store.getState().recordFeatureInteraction).toHaveBeenCalledWith('browser-tab-created')
   })
 
   it('does not import local browser cookies while a runtime environment is active', async () => {

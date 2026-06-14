@@ -94,7 +94,7 @@ describe('JiraIntegrationCard account scope', () => {
     mocks.store.current = null
   })
 
-  it('shows remote-server account ownership and opens Active Server host selection', async () => {
+  it('shows remote-server account ownership and opens Hosts settings', async () => {
     const state = installStore({ activeRuntimeEnvironmentId: 'runtime-1' })
 
     const rendered = await renderCard()
@@ -105,11 +105,15 @@ describe('JiraIntegrationCard account scope', () => {
 
     await act(async () => {
       Array.from(rendered.querySelectorAll('button'))
-        .find((button) => button.textContent === 'Change Host')
+        .find((button) => button.textContent === 'Open Remote Servers')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(state.openSettingsPage).toHaveBeenCalledTimes(1)
-    expect(state.openSettingsTarget).toHaveBeenCalledWith({ pane: 'servers', repoId: null })
+    expect(state.openSettingsTarget).toHaveBeenCalledWith({
+      pane: 'servers',
+      repoId: null,
+      sectionId: 'default-runtime'
+    })
   })
 })

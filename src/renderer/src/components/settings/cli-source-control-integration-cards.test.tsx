@@ -90,16 +90,20 @@ describe('CLI source-control integration card account scope', () => {
     expect(rendered.textContent).toContain('Connected')
     expect(rendered.textContent).toContain('Account scope: Local Mac')
     expect(rendered.textContent).toContain(
-      'Credentials and account checks for this provider are owned by this desktop client. Choose a remote Host from Settings > Active Server to edit server-owned credentials.'
+      'Credentials and account checks for this provider are owned by this desktop client. Use Settings > Remote Orca Servers > Advanced to edit server-owned credentials.'
     )
     await act(async () => {
       Array.from(rendered.querySelectorAll('button'))
-        .find((button) => button.textContent === 'Change Host')
+        .find((button) => button.textContent === 'Open Remote Servers')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(openSettingsPage).toHaveBeenCalledTimes(1)
-    expect(openSettingsTarget).toHaveBeenCalledWith({ pane: 'servers', repoId: null })
+    expect(openSettingsTarget).toHaveBeenCalledWith({
+      pane: 'servers',
+      repoId: null,
+      sectionId: 'default-runtime'
+    })
   })
 
   it('shows remote-server ownership for GitLab CLI credential checks', async () => {
@@ -115,7 +119,7 @@ describe('CLI source-control integration card account scope', () => {
     expect(rendered.textContent).toContain('GitLab')
     expect(rendered.textContent).toContain('Account scope: Remote server: runtime-1')
     expect(rendered.textContent).toContain(
-      'Credentials and account checks for this provider are owned by this remote server. Choose a different Host from Settings > Active Server to edit another account scope.'
+      'Credentials and account checks for this provider are owned by this remote server. Use Settings > Remote Orca Servers > Advanced to edit another default runtime scope.'
     )
     expect(rendered.textContent).toContain('glab auth login')
   })

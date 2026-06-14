@@ -18,9 +18,9 @@ export function ProviderHostScopeControl({
   const openSettingsPage = useAppStore((state) => state.openSettingsPage)
   const openSettingsTarget = useAppStore((state) => state.openSettingsTarget)
 
-  const openActiveServer = (): void => {
+  const openHostsSettings = (): void => {
     openSettingsPage()
-    openSettingsTarget({ pane: 'servers', repoId: null })
+    openSettingsTarget({ pane: 'servers', repoId: null, sectionId: 'default-runtime' })
   }
 
   return (
@@ -36,11 +36,11 @@ export function ProviderHostScopeControl({
           </span>
           <div className="mt-0.5 text-muted-foreground">{scope.description}</div>
         </div>
-        <Button type="button" variant="ghost" size="sm" onClick={openActiveServer}>
+        <Button type="button" variant="ghost" size="sm" onClick={openHostsSettings}>
           <ServerCog className="size-3.5" />
           {translate(
             'auto.components.settings.ProviderHostScopeControl.change_host',
-            'Change Host'
+            'Open Remote Servers'
           )}
         </Button>
       </div>

@@ -49,8 +49,8 @@ function blockedTitle(reason: 'client-too-old' | 'server-too-old'): string {
       )
 }
 
-// Why: runtime hosts deep-link to the Orca servers pane, SSH hosts to the SSH
-// targets pane, and local to general — each owns its own manage surface.
+// Why: SSH and paired runtime hosts share the sidebar model, but Settings keeps
+// their management pages separate so each connection type can explain itself.
 function openManageHost(row: HostHeaderRow): void {
   const state = useAppStore.getState()
   if (row.kind === 'runtime') {

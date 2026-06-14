@@ -259,6 +259,16 @@ type RemoteBrowserViewportSize = {
   height: number
 }
 
+function getBrowserPageRuntimeEnvironmentId(
+  page: BrowserPageState,
+  inferredRuntimeEnvironmentId: string | null | undefined
+): string | null {
+  if (page.browserRuntimeEnvironmentId !== undefined) {
+    return page.browserRuntimeEnvironmentId?.trim() || null
+  }
+  return inferredRuntimeEnvironmentId?.trim() || null
+}
+
 type RemoteBrowserImagePoint = {
   x: number
   y: number
@@ -746,14 +756,19 @@ export default function BrowserPane({
     browserPages.find((page) => page.id === browserTab.activePageId) ?? browserPages[0] ?? null
   const updateBrowserPageState = useAppStore((s) => s.updateBrowserPageState)
   const setBrowserPageUrl = useAppStore((s) => s.setBrowserPageUrl)
-  const runtimeEnvironmentActive = Boolean(activeRuntimeEnvironmentId?.trim())
+  const activeBrowserRuntimeEnvironmentId = activeBrowserPage
+    ? getBrowserPageRuntimeEnvironmentId(activeBrowserPage, activeRuntimeEnvironmentId)
+    : null
+  const runtimeEnvironmentActive = Boolean(activeBrowserRuntimeEnvironmentId)
   const activeBrowserPageId = activeBrowserPage?.id ?? null
   const browserPageIds = useMemo(() => browserPages.map((page) => page.id), [browserPages])
   const automationVisiblePageIds = useBrowserAutomationVisiblePageIds(browserPageIds)
   // Why: inactive Electron webviews must stay mounted in their original DOM
   // parent. Parking them by unmounting/reparenting loses form text and SPA
   // state on normal tab switches.
-  const renderedBrowserPages = browserPages
+  const renderedBrowserPages = browserPages.filter(
+    (page) => !getBrowserPageRuntimeEnvironmentId(page, activeRuntimeEnvironmentId)
+  )
   const [activeBrowserDriver, setActiveBrowserDriver] = useState<BrowserDriverState>({
     kind: 'idle'
   })
@@ -763,9 +778,11 @@ export default function BrowserPane({
       return
     }
     for (const page of browserPages) {
-      destroyPersistentWebview(page.id)
+      if (getBrowserPageRuntimeEnvironmentId(page, activeRuntimeEnvironmentId)) {
+        destroyPersistentWebview(page.id)
+      }
     }
-  }, [browserPages, runtimeEnvironmentActive])
+  }, [activeRuntimeEnvironmentId, browserPages, runtimeEnvironmentActive])
 
   useEffect(() => {
     if (runtimeEnvironmentActive || !activeBrowserPageId) {
@@ -793,11 +810,12 @@ export default function BrowserPane({
     await window.api.runtime.reclaimBrowserForDesktop(activeBrowserPageId)
   }, [activeBrowserPageId])
 
-  if (runtimeEnvironmentActive) {
+  if (activeBrowserRuntimeEnvironmentId) {
     return activeBrowserPage ? (
       <RemoteBrowserPagePane
-        key={`${activeRuntimeEnvironmentId?.trim() ?? ''}:${activeBrowserPage.id}`}
+        key={`${activeBrowserRuntimeEnvironmentId ?? ''}:${activeBrowserPage.id}`}
         browserTab={activeBrowserPage}
+        runtimeEnvironmentId={activeBrowserRuntimeEnvironmentId}
         worktreeId={browserTab.worktreeId}
         isActive={isActive}
         onUpdatePageState={updateBrowserPageState}
@@ -838,20 +856,20 @@ export default function BrowserPane({
 
 function RemoteBrowserPagePane({
   browserTab,
+  runtimeEnvironmentId,
   worktreeId,
   isActive,
   onUpdatePageState,
   onSetUrl
 }: {
   browserTab: BrowserPageState
+  runtimeEnvironmentId: string
   worktreeId: string
   isActive: boolean
   onUpdatePageState: (tabId: string, updates: BrowserTabPageState) => void
   onSetUrl: (tabId: string, url: string) => void
 }): React.JSX.Element {
-  const activeRuntimeEnvironmentId = useAppStore((s) =>
-    getRuntimeEnvironmentIdForWorktree(s, worktreeId)
-  )
+  const activeRuntimeEnvironmentId = runtimeEnvironmentId
   const addressBarInputRef = useRef<HTMLInputElement | null>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
   const remoteViewportRef = useRef<HTMLDivElement | null>(null)

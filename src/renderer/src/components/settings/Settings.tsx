@@ -102,7 +102,11 @@ const SETTINGS_NAV_GROUPS = [
   },
   {
     id: 'remote',
-    title: translate('auto.components.settings.Settings.23931df7e8', 'Remote Access')
+    title: translate('auto.components.settings.Settings.23931df7e8', 'Remote Hosts')
+  },
+  {
+    id: 'mobile',
+    title: translate('auto.components.settings.Settings.mobile_group', 'Mobile')
   },
   {
     id: 'security',
@@ -1366,7 +1370,7 @@ function Settings(): React.JSX.Element {
                         )
                       : translate(
                           'auto.components.settings.Settings.b5ee17826b',
-                          'Switch between local desktop mode and paired remote Orca runtimes.'
+                          'Pair remote Orca runtimes for persistent sessions, richer remote state, and web or mobile handoff.'
                         )
                   }
                   searchEntries={getSectionSearchEntries('servers')}
@@ -1388,7 +1392,7 @@ function Settings(): React.JSX.Element {
                       title={translate('auto.components.settings.Settings.9b02492d1f', 'SSH Hosts')}
                       description={translate(
                         'auto.components.settings.Settings.c2ee313198',
-                        'SSH host access for files, terminals, and git.'
+                        'Use existing machines over SSH for files, terminals, Git, and workspaces.'
                       )}
                       searchEntries={getSectionSearchEntries('ssh')}
                     >

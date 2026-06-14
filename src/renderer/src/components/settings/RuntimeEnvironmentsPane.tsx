@@ -1,7 +1,17 @@
 /* eslint-disable max-lines -- Why: the server settings pane keeps active
    server selection, saved server mutation, and confirmation dialogs together so
    the state transitions stay auditable. */
-import { AlertTriangle, CheckCircle2, Loader2, Plus, RefreshCw, Share2, Trash2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  ChevronDown,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Server,
+  ServerOff,
+  Share2,
+  Trash2
+} from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useMountedRef } from '@/hooks/useMountedRef'
@@ -41,6 +51,7 @@ import {
 import { unwrapRuntimeRpcResult } from '@/runtime/runtime-rpc-client'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
+import { cn } from '@/lib/utils'
 
 const LOCAL_RUNTIME_VALUE = '__local__'
 const NO_RUNTIME_VALUE = '__none__'
@@ -179,6 +190,59 @@ export function getActiveServerModeDescription(allowLocalRuntime: boolean): stri
       )
 }
 
+type RuntimeServerConnectionState = 'connected' | 'available' | 'checking' | 'disconnected'
+
+function getRuntimeServerConnectionState(
+  details: RuntimeHostDetails | undefined,
+  active: boolean
+): RuntimeServerConnectionState {
+  if (!details || details.status === 'loading') {
+    return 'checking'
+  }
+  if (details.status !== 'ready' || details.compatibility?.kind === 'blocked') {
+    return 'disconnected'
+  }
+  return active ? 'connected' : 'available'
+}
+
+function getRuntimeServerConnectionLabel(state: RuntimeServerConnectionState): string {
+  switch (state) {
+    case 'connected':
+      return translate(
+        'auto.components.settings.RuntimeEnvironmentsPane.serverConnected',
+        'Connected'
+      )
+    case 'available':
+      return translate(
+        'auto.components.settings.RuntimeEnvironmentsPane.serverAvailable',
+        'Available'
+      )
+    case 'checking':
+      return translate(
+        'auto.components.settings.RuntimeEnvironmentsPane.serverChecking',
+        'Checking…'
+      )
+    case 'disconnected':
+      return translate(
+        'auto.components.settings.RuntimeEnvironmentsPane.serverDisconnected',
+        'Disconnected'
+      )
+  }
+}
+
+function getRuntimeServerDotClass(state: RuntimeServerConnectionState): string {
+  switch (state) {
+    case 'connected':
+      return 'bg-emerald-500'
+    case 'available':
+      return 'bg-muted-foreground/50'
+    case 'checking':
+      return 'bg-yellow-500'
+    case 'disconnected':
+      return 'bg-muted-foreground/40'
+  }
+}
+
 export function RuntimeEnvironmentsPane({
   settings,
   switchRuntimeEnvironment,
@@ -193,10 +257,12 @@ export function RuntimeEnvironmentsPane({
   >({})
   const [switchingValue, setSwitchingValue] = useState<string | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
+  const [disconnectingId, setDisconnectingId] = useState<string | null>(null)
   const [pendingSwitchValue, setPendingSwitchValue] = useState<string | null>(null)
   const [pendingRemove, setPendingRemove] = useState<PublicKnownRuntimeEnvironment | null>(null)
   const [addServerFormOpen, setAddServerFormOpen] = useState(false)
   const [shareServerFormOpen, setShareServerFormOpen] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [switchError, setSwitchError] = useState<string | null>(null)
   const [removeError, setRemoveError] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -205,7 +271,8 @@ export function RuntimeEnvironmentsPane({
   const activeValue =
     settings.activeRuntimeEnvironmentId ??
     (allowLocalRuntime ? LOCAL_RUNTIME_VALUE : NO_RUNTIME_VALUE)
-  const isBusy = isSaving || switchingValue !== null || removingId !== null
+  const isBusy =
+    isSaving || switchingValue !== null || removingId !== null || disconnectingId !== null
   const removingActiveServer = pendingRemove?.id === settings.activeRuntimeEnvironmentId
   const searchEntry = canGeneratePairingUrl
     ? getRuntimeEnvironmentsSearchEntry()
@@ -377,7 +444,7 @@ export function RuntimeEnvironmentsPane({
           toast.success(
             translate(
               'auto.components.settings.RuntimeEnvironmentsPane.7b5986c8df',
-              'Saved {{value0}}. Use Active Server to switch when ready.',
+              'Saved {{value0}}. Use Advanced > Default runtime to make it the default.',
               { value0: result.environment.name }
             )
           )
@@ -463,6 +530,65 @@ export function RuntimeEnvironmentsPane({
     }
   }
 
+  const disconnectEnvironment = async (
+    environment: PublicKnownRuntimeEnvironment
+  ): Promise<boolean> => {
+    setDisconnectingId(environment.id)
+    setSwitchError(null)
+    try {
+      if (settings.activeRuntimeEnvironmentId === environment.id) {
+        const switched = await switchRuntimeEnvironment(null)
+        if (!switched) {
+          if (mountedRef.current) {
+            setSwitchError(
+              allowLocalRuntime
+                ? 'Could not switch to Local desktop. Fix the issue and try again.'
+                : 'Could not disconnect from this server. Fix the issue and try again.'
+            )
+          }
+          return false
+        }
+      }
+      await window.api.runtimeEnvironments.disconnect({ selector: environment.id })
+      // Why: disconnect is non-destructive; keep the saved server but show the
+      // user that this live client is no longer attached to it.
+      useAppStore.getState().setRuntimeEnvironmentStatus(environment.id, {
+        status: null,
+        checkedAt: Date.now()
+      })
+      if (mountedRef.current) {
+        setDetailsByEnvironmentId((current) => ({
+          ...current,
+          [environment.id]: {
+            status: 'error',
+            runtimeStatus: null,
+            compatibility: null,
+            error: null
+          }
+        }))
+        toast.success(
+          translate(
+            'auto.components.settings.RuntimeEnvironmentsPane.disconnectedServer',
+            'Disconnected from {{value0}}.',
+            { value0: environment.name }
+          )
+        )
+      }
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to disconnect server.'
+      if (mountedRef.current) {
+        setSwitchError(message)
+        toast.error(message)
+      }
+      return false
+    } finally {
+      if (mountedRef.current) {
+        setDisconnectingId(null)
+      }
+    }
+  }
+
   const switchToValue = async (value: string): Promise<boolean> => {
     if (value === NO_RUNTIME_VALUE) {
       return false
@@ -520,86 +646,21 @@ export function RuntimeEnvironmentsPane({
       keywords={searchEntry.keywords}
       className="space-y-4 py-2"
     >
-      <div className="space-y-2">
-        <div className="space-y-1">
-          <Label id="runtime-active-server-label">
-            {translate(
-              'auto.components.settings.RuntimeEnvironmentsPane.64b6bea541',
-              'Active Server'
-            )}
-          </Label>
-          <p className="text-xs text-muted-foreground">
-            {getActiveServerModeDescription(allowLocalRuntime)}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={activeValue}
-            onValueChange={(value) => {
-              if (value !== activeValue) {
-                setSwitchError(null)
-                setPendingSwitchValue(value)
-              }
-            }}
-            disabled={isBusy}
-          >
-            <SelectTrigger
-              size="sm"
-              className="min-w-[260px]"
-              aria-labelledby="runtime-active-server-label"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {allowLocalRuntime ? (
-                <SelectItem value={LOCAL_RUNTIME_VALUE}>
-                  {translate(
-                    'auto.components.settings.RuntimeEnvironmentsPane.78692becbd',
-                    'Local desktop'
-                  )}
-                </SelectItem>
-              ) : environments.length === 0 ? (
-                <SelectItem value={NO_RUNTIME_VALUE} disabled>
-                  {translate(
-                    'auto.components.settings.RuntimeEnvironmentsPane.b07070ed3c',
-                    'No server connected'
-                  )}
-                </SelectItem>
-              ) : null}
-              {environments.map((environment) => (
-                <SelectItem key={environment.id} value={environment.id}>
-                  {environment.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            aria-label={translate(
-              'auto.components.settings.RuntimeEnvironmentsPane.6ce4664003',
-              'Refresh servers'
-            )}
-            title={translate(
-              'auto.components.settings.RuntimeEnvironmentsPane.6ce4664003',
-              'Refresh servers'
-            )}
-            onClick={() => void loadEnvironments()}
-            disabled={isLoading || isBusy}
-          >
-            {isLoading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-          </Button>
-        </div>
-      </div>
-
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-medium">
-            {translate(
-              'auto.components.settings.RuntimeEnvironmentsPane.1826bd0608',
-              'Saved Servers'
-            )}
+          <div className="min-w-0 space-y-0.5">
+            <div className="text-sm font-medium">
+              {translate(
+                'auto.components.settings.RuntimeEnvironmentsPane.connectToRemoteServers',
+                'Connect to remote servers'
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {translate(
+                'auto.components.settings.RuntimeEnvironmentsPane.connectToRemoteServersHelp',
+                'Pair another Orca runtime, then connect when you want this client to use it as the default host.'
+              )}
+            </p>
           </div>
           {addServerFormOpen ? null : (
             <Button
@@ -705,7 +766,7 @@ export function RuntimeEnvironmentsPane({
           </form>
         ) : null}
 
-        <div className="rounded-lg border border-border/50">
+        <div className="rounded-lg border border-border/50 bg-card/30">
           {environments.length === 0 ? (
             <div className="px-3 py-4 text-sm text-muted-foreground">
               {translate(
@@ -718,35 +779,262 @@ export function RuntimeEnvironmentsPane({
               {environments.map((environment) => (
                 <div
                   key={environment.id}
-                  className="flex items-start justify-between gap-3 px-3 py-2"
+                  data-settings-section={environment.id}
+                  className="flex items-center gap-3 px-4 py-3"
                 >
                   {(() => {
                     const details = detailsByEnvironmentId[environment.id]
                     const detailsDescription = getHostDetailsDescription(details)
+                    const isActive = settings.activeRuntimeEnvironmentId === environment.id
+                    const connectionState = getRuntimeServerConnectionState(details, isActive)
+                    const actionBusy =
+                      switchingValue === environment.id ||
+                      disconnectingId === environment.id ||
+                      removingId === environment.id
                     return (
-                      <div className="min-w-0">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <div className="truncate text-sm font-medium">{environment.name}</div>
-                          {details?.compatibility?.kind === 'blocked' ? (
-                            <AlertTriangle className="size-3.5 shrink-0 text-destructive" />
-                          ) : details?.status === 'ready' ? (
-                            <CheckCircle2 className="size-3.5 shrink-0 text-status-success" />
-                          ) : details?.status === 'loading' ? (
-                            <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                      <>
+                        <Server className="size-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <div className="truncate text-sm font-medium">{environment.name}</div>
+                            <span
+                              className={cn(
+                                'size-2 shrink-0 rounded-full',
+                                getRuntimeServerDotClass(connectionState)
+                              )}
+                            />
+                            <span className="text-[11px] text-muted-foreground">
+                              {getRuntimeServerConnectionLabel(connectionState)}
+                            </span>
+                            {details?.compatibility?.kind === 'blocked' ? (
+                              <AlertTriangle className="size-3.5 shrink-0 text-destructive" />
+                            ) : details?.status === 'loading' ? (
+                              <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                            ) : null}
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {isActive
+                              ? translate(
+                                  'auto.components.settings.RuntimeEnvironmentsPane.activeServerRowHelp',
+                                  'Default host for server-routed projects, terminals, and provider checks.'
+                                )
+                              : getHostDetailsSummary(details)}
+                          </p>
+                          {detailsDescription ? (
+                            <p
+                              className={cn(
+                                'mt-0.5 truncate text-xs',
+                                details?.compatibility?.kind === 'blocked'
+                                  ? 'text-destructive'
+                                  : 'text-muted-foreground'
+                              )}
+                            >
+                              {detailsDescription}
+                            </p>
                           ) : null}
                         </div>
-                        <div className="truncate font-mono text-xs text-muted-foreground">
-                          {environment.endpoints[0]?.endpoint ??
-                            translate(
-                              'auto.components.settings.RuntimeEnvironmentsPane.6ef71985da',
-                              'No endpoint'
+                        <div className="flex shrink-0 items-center gap-1">
+                          {isActive ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="xs"
+                              className="gap-1.5"
+                              onClick={() => void disconnectEnvironment(environment)}
+                              disabled={actionBusy}
+                            >
+                              {disconnectingId === environment.id ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <ServerOff className="size-3" />
+                              )}
+                              {translate(
+                                'auto.components.settings.RuntimeEnvironmentsPane.disconnect',
+                                'Disconnect'
+                              )}
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="xs"
+                              className="gap-1.5"
+                              onClick={() => void switchToValue(environment.id)}
+                              disabled={actionBusy || connectionState === 'checking'}
+                            >
+                              {switchingValue === environment.id ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <Server className="size-3" />
+                              )}
+                              {translate(
+                                'auto.components.settings.RuntimeEnvironmentsPane.connect',
+                                'Connect'
+                              )}
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setRemoveError(null)
+                              setPendingRemove(environment)
+                            }}
+                            className="size-7 text-muted-foreground hover:text-red-400"
+                            disabled={isBusy}
+                            aria-label={translate(
+                              'auto.components.settings.RuntimeEnvironmentsPane.aeb26635d2',
+                              'Remove {{value0}}',
+                              { value0: environment.name }
                             )}
+                          >
+                            {removingId === environment.id ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="size-3" />
+                            )}
+                          </Button>
                         </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-                          <span>{getHostDetailsSummary(details)}</span>
-                          {details?.runtimeStatus ? (
-                            <>
-                              <span>
+                      </>
+                    )
+                  })()}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div data-settings-section="default-runtime">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setAdvancedOpen((current) => !current)}
+          className="-ml-2 text-xs"
+        >
+          {translate('auto.components.settings.RuntimeEnvironmentsPane.advanced', 'Advanced')}
+          <ChevronDown
+            className={cn('size-4 transition-transform', advancedOpen && 'rotate-180')}
+          />
+        </Button>
+
+        <div
+          className={cn(
+            'grid overflow-hidden transition-[grid-template-rows] duration-200 ease-out',
+            advancedOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+          )}
+          aria-hidden={!advancedOpen}
+        >
+          <div className="min-h-0">
+            <div
+              className={cn(
+                'space-y-2 px-1 pt-1 pb-1 transition-[opacity,transform] duration-150 ease-out',
+                advancedOpen
+                  ? 'translate-y-0 opacity-100 delay-200'
+                  : '-translate-y-1 opacity-0 delay-0'
+              )}
+            >
+              <div className="space-y-1">
+                <Label id="runtime-active-server-label">
+                  {translate(
+                    'auto.components.settings.RuntimeEnvironmentsPane.64b6bea541',
+                    'Default runtime'
+                  )}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {getActiveServerModeDescription(allowLocalRuntime)}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={activeValue}
+                  onValueChange={(value) => {
+                    if (value !== activeValue) {
+                      setSwitchError(null)
+                      setPendingSwitchValue(value)
+                    }
+                  }}
+                  disabled={isBusy}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="min-w-[260px]"
+                    aria-labelledby="runtime-active-server-label"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allowLocalRuntime ? (
+                      <SelectItem value={LOCAL_RUNTIME_VALUE}>
+                        {translate(
+                          'auto.components.settings.RuntimeEnvironmentsPane.78692becbd',
+                          'Local desktop'
+                        )}
+                      </SelectItem>
+                    ) : environments.length === 0 ? (
+                      <SelectItem value={NO_RUNTIME_VALUE} disabled>
+                        {translate(
+                          'auto.components.settings.RuntimeEnvironmentsPane.b07070ed3c',
+                          'No server connected'
+                        )}
+                      </SelectItem>
+                    ) : null}
+                    {environments.map((environment) => (
+                      <SelectItem key={environment.id} value={environment.id}>
+                        {environment.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label={translate(
+                    'auto.components.settings.RuntimeEnvironmentsPane.6ce4664003',
+                    'Refresh servers'
+                  )}
+                  title={translate(
+                    'auto.components.settings.RuntimeEnvironmentsPane.6ce4664003',
+                    'Refresh servers'
+                  )}
+                  onClick={() => void loadEnvironments()}
+                  disabled={isLoading || isBusy}
+                >
+                  {isLoading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                </Button>
+              </div>
+              {environments.length > 0 ? (
+                <div className="space-y-2 pt-2">
+                  <div className="text-xs font-medium">
+                    {translate(
+                      'auto.components.settings.RuntimeEnvironmentsPane.serverDetails',
+                      'Server details'
+                    )}
+                  </div>
+                  <div className="space-y-1 rounded-lg border border-border/50 bg-card/30 p-2">
+                    {environments.map((environment) => {
+                      const details = detailsByEnvironmentId[environment.id]
+                      return (
+                        <div
+                          key={environment.id}
+                          className="grid gap-1 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)]"
+                        >
+                          <div className="truncate font-medium text-foreground">
+                            {environment.name}
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="truncate font-mono">
+                              {environment.endpoints[0]?.endpoint ??
+                                translate(
+                                  'auto.components.settings.RuntimeEnvironmentsPane.6ef71985da',
+                                  'No endpoint'
+                                )}
+                            </div>
+                            {details?.runtimeStatus ? (
+                              <div className="truncate">
                                 {translate(
                                   'auto.components.settings.RuntimeEnvironmentsPane.0ef838094a',
                                   'Protocol {{value0}}',
@@ -757,99 +1045,88 @@ export function RuntimeEnvironmentsPane({
                                       0
                                   }
                                 )}
-                              </span>
-                              {details.runtimeStatus?.hostPlatform ? (
-                                <span>{details.runtimeStatus?.hostPlatform}</span>
-                              ) : null}
-                              <span>
-                                {translate(
-                                  'auto.components.settings.RuntimeEnvironmentsPane.5c6d7e8f9a',
-                                  'Capabilities: {{value0}}',
-                                  {
-                                    value0: getRuntimeCapabilitiesSummary(details.runtimeStatus)
-                                  }
-                                )}
-                              </span>
-                              <span>{getHostModelCapabilitySummary(details.runtimeStatus)}</span>
-                            </>
-                          ) : detailsDescription ? (
-                            <span className="truncate text-destructive">{detailsDescription}</span>
-                          ) : null}
-                        </div>
-                        {detailsDescription && details?.runtimeStatus ? (
-                          <div className="mt-1 max-w-xl text-[11px] text-muted-foreground">
-                            {detailsDescription}
+                                {details.runtimeStatus.hostPlatform
+                                  ? ` · ${details.runtimeStatus.hostPlatform}`
+                                  : ''}
+                                {' · '}
+                                {getRuntimeCapabilitiesSummary(details.runtimeStatus)}
+                              </div>
+                            ) : null}
+                            {getHostModelCapabilitySummary(details?.runtimeStatus) ? (
+                              <div className="truncate">
+                                {getHostModelCapabilitySummary(details?.runtimeStatus)}
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
-                    )
-                  })()}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => {
-                      setRemoveError(null)
-                      setPendingRemove(environment)
-                    }}
-                    disabled={isBusy}
-                    aria-label={translate(
-                      'auto.components.settings.RuntimeEnvironmentsPane.aeb26635d2',
-                      'Remove {{value0}}',
-                      { value0: environment.name }
-                    )}
-                  >
-                    <Trash2 />
-                  </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-              ))}
+              ) : null}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
       {canGeneratePairingUrl ? (
-        <div className="overflow-hidden rounded-lg border border-border/50">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
-            <div className="min-w-0 space-y-0.5">
-              <div className="text-sm font-medium">
-                {translate(
-                  'auto.components.settings.RuntimeEnvironmentsPane.6e1280ca55',
-                  'Share this Orca server'
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {translate(
-                  'auto.components.settings.RuntimeEnvironmentsPane.84b9b2be05',
-                  'Create a revocable access grant so a browser or another Orca client can connect.'
-                )}
-              </p>
+        <div className="space-y-3 pt-2">
+          <div className="space-y-0.5">
+            <div className="text-sm font-medium">
+              {translate(
+                'auto.components.settings.RuntimeEnvironmentsPane.advertiseThisApp',
+                'Advertise this app as a server'
+              )}
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setShareServerFormOpen((open) => !open)}
-            >
-              <Share2 />
-              {shareServerFormOpen
-                ? translate(
-                    'auto.components.settings.RuntimeEnvironmentsPane.54dee18f5c',
-                    'Hide Form'
-                  )
-                : translate(
-                    'auto.components.settings.RuntimeEnvironmentsPane.3595fd1948',
-                    'New Link'
-                  )}
-            </Button>
+            <p className="text-xs text-muted-foreground">
+              {translate(
+                'auto.components.settings.RuntimeEnvironmentsPane.advertiseThisAppHelp',
+                'Create access links for browsers, mobile clients, or another Orca client to connect back to this running app.'
+              )}
+            </p>
           </div>
-          <div className="border-t border-border/40 px-3 py-3">
-            <RuntimePairingUrlGenerator
-              framed={false}
-              showHeader={false}
-              showGeneratorForm={shareServerFormOpen}
-            />
+          <div className="overflow-hidden rounded-lg border border-border/50 bg-card/30">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
+              <div className="min-w-0 space-y-0.5">
+                <div className="text-sm font-medium">
+                  {translate(
+                    'auto.components.settings.RuntimeEnvironmentsPane.6e1280ca55',
+                    'Share this Orca server'
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {translate(
+                    'auto.components.settings.RuntimeEnvironmentsPane.84b9b2be05',
+                    'Create a revocable access grant so a browser or another Orca client can connect.'
+                  )}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setShareServerFormOpen((open) => !open)}
+              >
+                <Share2 />
+                {shareServerFormOpen
+                  ? translate(
+                      'auto.components.settings.RuntimeEnvironmentsPane.54dee18f5c',
+                      'Hide Form'
+                    )
+                  : translate(
+                      'auto.components.settings.RuntimeEnvironmentsPane.3595fd1948',
+                      'New Link'
+                    )}
+              </Button>
+            </div>
+            <div className="border-t border-border/40 px-3 py-3">
+              <RuntimePairingUrlGenerator
+                framed={false}
+                showHeader={false}
+                showGeneratorForm={shareServerFormOpen}
+              />
+            </div>
           </div>
         </div>
       ) : null}

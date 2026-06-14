@@ -41,6 +41,8 @@ import { createBrowserUuid } from '@/lib/browser-uuid'
 import { translate } from '@/i18n/i18n'
 import {
   getSettingsFocusedExecutionHostId,
+  LOCAL_EXECUTION_HOST_ID,
+  toRuntimeExecutionHostId,
   type ExecutionHostId
 } from '../../../../shared/execution-host'
 import {
@@ -62,11 +64,13 @@ type CreateBrowserTabOptions = {
   // (context menu, window.open, http link routing) leave this unset so focus
   // stays on the webview. When omitted, we fall back to the blank-URL check.
   focusAddressBar?: boolean
+  browserRuntimeEnvironmentId?: string | null
 }
 
 type CreateBrowserPageOptions = {
   activate?: boolean
   title?: string
+  browserRuntimeEnvironmentId?: string | null
 }
 
 type BrowserTabPageState = {
@@ -244,6 +248,23 @@ function getBrowserWorktreeHostId(state: AppState, worktreeId: string): Executio
   return getExecutionHostIdForWorktree(state, worktreeId)
 }
 
+function getBrowserSessionProfileHostId(
+  state: AppState,
+  worktreeId: string,
+  browserRuntimeEnvironmentId: string | null | undefined
+): ExecutionHostId {
+  if (browserRuntimeEnvironmentId === null) {
+    return LOCAL_EXECUTION_HOST_ID
+  }
+  if (browserRuntimeEnvironmentId !== undefined) {
+    const runtimeEnvironmentId = browserRuntimeEnvironmentId.trim()
+    return runtimeEnvironmentId
+      ? toRuntimeExecutionHostId(runtimeEnvironmentId)
+      : LOCAL_EXECUTION_HOST_ID
+  }
+  return getBrowserWorktreeHostId(state, worktreeId)
+}
+
 function profileListByHostUpdate(
   state: Pick<AppState, 'browserSessionProfilesByHostId' | 'settings'>,
   profiles: BrowserSessionProfile[]
@@ -274,7 +295,8 @@ function buildBrowserPage(
   workspaceId: string,
   worktreeId: string,
   url: string,
-  title?: string
+  title?: string,
+  browserRuntimeEnvironmentId?: string | null
 ): BrowserPage {
   const normalizedUrl = normalizeUrl(url)
   return {
@@ -291,7 +313,8 @@ function buildBrowserPage(
     canGoBack: false,
     canGoForward: false,
     loadError: null,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    ...(browserRuntimeEnvironmentId !== undefined ? { browserRuntimeEnvironmentId } : {})
   }
 }
 
@@ -462,7 +485,13 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
 
   createBrowserTab: (worktreeId, url, options) => {
     const workspaceId = createBrowserUuid()
-    const page = buildBrowserPage(workspaceId, worktreeId, url, options?.title)
+    const page = buildBrowserPage(
+      workspaceId,
+      worktreeId,
+      url,
+      options?.title,
+      options?.browserRuntimeEnvironmentId
+    )
     // Why: when no explicit profile is passed, inherit the user's chosen default
     // profile. This lets users set a preferred profile in Settings that all new
     // browser tabs use automatically.
@@ -470,7 +499,7 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
       options?.sessionProfileId !== undefined
         ? options.sessionProfileId
         : (get().defaultBrowserSessionProfileIdByHostId[
-            getBrowserWorktreeHostId(get(), worktreeId)
+            getBrowserSessionProfileHostId(get(), worktreeId, options?.browserRuntimeEnvironmentId)
           ] ?? get().defaultBrowserSessionProfileId)
     const browserTab = buildWorkspaceFromPage(
       workspaceId,
@@ -575,15 +604,29 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
     const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(state, worktreeId)
     if (runtimeEnvironmentId) {
       const { createWebRuntimeSessionBrowserTab } = await import('@/runtime/web-runtime-session')
-      const created = await createWebRuntimeSessionBrowserTab({
-        worktreeId,
-        environmentId: runtimeEnvironmentId,
-        url: defaultUrl,
-        targetGroupId: groupId
-      })
-      if (created) {
-        get().recordFeatureInteraction('browser-tab-created')
+      try {
+        const created = await createWebRuntimeSessionBrowserTab({
+          worktreeId,
+          environmentId: runtimeEnvironmentId,
+          url: defaultUrl,
+          targetGroupId: groupId
+        })
+        if (created) {
+          get().recordFeatureInteraction('browser-tab-created')
+          return
+        }
+      } catch {
+        // Fall through to the client-local fallback below.
       }
+      // Why: headless remote runtimes cannot host browser panes yet. Keep the
+      // workspace remote-owned, but open this browser page on the desktop client.
+      get().createBrowserTab(worktreeId, defaultUrl, {
+        title: translate('auto.store.slices.browser.d175274b6d', 'New Browser Tab'),
+        focusAddressBar: true,
+        targetGroupId: groupId,
+        browserRuntimeEnvironmentId: null
+      })
+      get().recordFeatureInteraction('browser-tab-created')
       return
     }
     get().createBrowserTab(worktreeId, defaultUrl, {
@@ -593,7 +636,6 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
     })
     get().recordFeatureInteraction('browser-tab-created')
   },
-
   closeBrowserTab: (tabId) => {
     let remotePagesToClose: { worktreeId: string; handle: RemoteBrowserPageHandle }[] = []
     set((s) => {
@@ -795,13 +837,15 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
     const restored = get().createBrowserTab(worktreeId, firstPage.url, {
       title: firstPage.title,
       activate: true,
-      sessionProfileId
+      sessionProfileId,
+      browserRuntimeEnvironmentId: firstPage.browserRuntimeEnvironmentId
     })
 
     for (const p of restPages) {
       get().createBrowserPage(restored.id, p.url, {
         activate: false,
-        title: p.title
+        title: p.title,
+        browserRuntimeEnvironmentId: p.browserRuntimeEnvironmentId
       })
     }
 
@@ -869,7 +913,13 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
     if (!workspace) {
       return null
     }
-    const page = buildBrowserPage(workspaceId, workspace.worktreeId, url, options?.title)
+    const page = buildBrowserPage(
+      workspaceId,
+      workspace.worktreeId,
+      url,
+      options?.title,
+      options?.browserRuntimeEnvironmentId
+    )
 
     set((s) => {
       const pages = s.browserPagesByWorkspace[workspaceId] ?? []
@@ -1045,7 +1095,8 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
 
     return get().createBrowserPage(workspaceId, pageToRestore.url, {
       title: pageToRestore.title,
-      activate: true
+      activate: true,
+      browserRuntimeEnvironmentId: pageToRestore.browserRuntimeEnvironmentId
     })
   },
 
