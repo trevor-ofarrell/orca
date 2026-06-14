@@ -528,8 +528,11 @@ async function runNestedRepoScanForIpc(
 }
 
 export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): void {
-  const getTargetWindow = (event: IpcMainInvokeEvent): BrowserWindow =>
-    getMainWindowForWebContents(event.sender) ?? mainWindow
+  const getTargetWindow = (event: IpcMainInvokeEvent | null | undefined): BrowserWindow => {
+    // Why: repo clone helpers share this path with tests and defensive callers
+    // that do not have an Electron sender; keep legacy main-window fallback.
+    return event?.sender ? (getMainWindowForWebContents(event.sender) ?? mainWindow) : mainWindow
+  }
 
   // Remove any previously registered handlers so we can re-register them
   // (e.g. when macOS re-activates the app and creates a new window).
