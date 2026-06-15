@@ -36,6 +36,7 @@ import { useAppStore } from '@/store'
 import { resolveRemoteOperationErrorMessage } from '@/store/slices/editor'
 import { useActiveWorktree, useRepoById, useWorktreeMap } from '@/store/selectors'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
+import { readSourceControlCommitDraftForWorktree } from '@/store/slices/source-control-commit-drafts'
 import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { detectLanguage } from '@/lib/language-detect'
 import { basename, dirname, joinPath } from '@/lib/path'
@@ -385,8 +386,6 @@ function requestSourceControlEditorRevealFrame(
 // ./source-control-primary-action.ts. It is imported directly by callers
 // (tests and other components) instead of going through this module.
 
-type CommitDraftsByWorktree = Record<string, string>
-
 export function normalizeSourceControlViewMode(value: unknown): SourceControlViewMode {
   return value === 'tree' || value === 'list' ? value : 'list'
 }
@@ -436,21 +435,6 @@ type CreatedHostedReview = {
   provider: HostedReviewProvider
   number: number
   url: string
-}
-
-export function readCommitDraftForWorktree(
-  drafts: CommitDraftsByWorktree,
-  worktreeId: string | null | undefined
-): string {
-  return drafts[worktreeId ?? ''] ?? ''
-}
-
-export function writeCommitDraftForWorktree(
-  drafts: CommitDraftsByWorktree,
-  worktreeId: string,
-  value: string
-): CommitDraftsByWorktree {
-  return { ...drafts, [worktreeId]: value }
 }
 
 export function shouldRenderCommitArea(
@@ -845,9 +829,6 @@ function SourceControlInner(): React.JSX.Element {
   // falsy until we have a real answer from the main process.
   const [defaultBaseRef, setDefaultBaseRef] = useState<string | null>(null)
   const [filterQuery, setFilterQuery] = useState('')
-  // Why: commit drafts/errors are worktree-scoped during the mounted session,
-  // so switching worktrees restores each draft instead of wiping it.
-  const [commitDrafts, setCommitDrafts] = useState<CommitDraftsByWorktree>({})
   const [commitErrors, setCommitErrors] = useState<Record<string, string | null>>({})
   const [remoteActionErrors, setRemoteActionErrors] = useState<
     Record<string, SourceControlActionError | null>
@@ -891,7 +872,16 @@ function SourceControlInner(): React.JSX.Element {
   const setPullRequestGenerationRecord = useAppStore((s) => s.setPullRequestGenerationRecord)
   const updatePullRequestGenerationRecord = useAppStore((s) => s.updatePullRequestGenerationRecord)
   const filterInputRef = useRef<HTMLInputElement>(null)
-  const commitMessage = readCommitDraftForWorktree(commitDrafts, activeWorktreeId)
+  const commitMessage = useAppStore((s) =>
+    readSourceControlCommitDraftForWorktree(s.sourceControlCommitDraftsByWorktree, activeWorktreeId)
+  )
+  const setSourceControlCommitDraft = useAppStore((s) => s.setSourceControlCommitDraft)
+  const clearSourceControlCommitDraftIfUnchanged = useAppStore(
+    (s) => s.clearSourceControlCommitDraftIfUnchanged
+  )
+  const setSourceControlCommitDraftIfEmpty = useAppStore(
+    (s) => s.setSourceControlCommitDraftIfEmpty
+  )
   const commitError = commitErrors[activeWorktreeId ?? ''] ?? null
   const remoteActionError = remoteActionErrors[activeWorktreeId ?? ''] ?? null
   const [gitHistoryByWorktree, setGitHistoryByWorktree] = useState<
@@ -1378,7 +1368,7 @@ function SourceControlInner(): React.JSX.Element {
     openSettingsPage
   })
 
-  // Why: orphaned draft/error/in-flight entries accumulate when worktrees are
+  // Why: orphaned error/in-flight entries accumulate when worktrees are
   // removed from the store (long sessions with many create/destroy cycles).
   // Prune them so a deleted-then-reused worktree ID doesn't inherit stale
   // state — especially commitInFlightRef, which would permanently disable
@@ -1396,7 +1386,6 @@ function SourceControlInner(): React.JSX.Element {
       }
       return changed ? next : prev
     }
-    setCommitDrafts((prev) => pruneRecord(prev))
     setCommitErrors((prev) => pruneRecord(prev))
     setRemoteActionErrors((prev) => pruneRecord(prev))
     setCommitInFlightByWorktree((prev) => pruneRecord(prev))
@@ -1504,19 +1493,9 @@ function SourceControlInner(): React.JSX.Element {
       }
 
       // Why: the textarea stays enabled during the in-flight commit (only the
-      // button is disabled), so the user can keep typing after clicking Commit.
-      // Unconditionally clearing the draft here would silently discard those
-      // in-progress edits — the commit used the OLD `message` captured in this
-      // closure, so the dropped text would never have been committed either.
-      // Only clear when the current draft still matches what we committed.
-      setCommitDrafts((prev) => {
-        const current = prev[activeWorktreeId]
-        if (current !== undefined && current.trim() !== message) {
-          // User typed more after submit — preserve their in-progress edits.
-          return prev
-        }
-        return writeCommitDraftForWorktree(prev, activeWorktreeId, '')
-      })
+      // button is disabled), so the store action compares against the latest
+      // draft before clearing the value this request actually committed.
+      clearSourceControlCommitDraftIfUnchanged(activeWorktreeId, message)
       setCommitErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
       void refreshActiveGitStatusAfterMutation()
       // Why: flip branchSummary to 'loading' synchronously so the empty-state
@@ -1558,6 +1537,7 @@ function SourceControlInner(): React.JSX.Element {
     activeRepoSettings,
     activeWorktreeId,
     beginGitBranchCompareRequest,
+    clearSourceControlCommitDraftIfUnchanged,
     commitMessage,
     effectiveBaseRef,
     grouped.staged.length,
@@ -1625,15 +1605,9 @@ function SourceControlInner(): React.JSX.Element {
         }
 
         // Why: race protection — the user may have started typing into the
-        // textarea while the agent was running. In that case we silently drop
-        // the generated message rather than overwrite their in-progress edits.
-        setCommitDrafts((prev) => {
-          const current = prev[activeWorktreeId]
-          if (current && current.length > 0) {
-            return prev
-          }
-          return writeCommitDraftForWorktree(prev, activeWorktreeId, result.message)
-        })
+        // textarea while the agent was running. The store action only hydrates
+        // an empty latest draft, never a non-empty manual one.
+        setSourceControlCommitDraftIfEmpty(activeWorktreeId, result.message)
         useAppStore.getState().recordFeatureInteraction('ai-commit-generation')
         setGenerateErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
       } catch (error) {
@@ -1647,7 +1621,13 @@ function SourceControlInner(): React.JSX.Element {
         generateInFlightRef.current[activeWorktreeId] = false
       }
     },
-    [activeRepoSettings, activeWorktreeId, resolvedCommitMessageAi, worktreePath]
+    [
+      activeRepoSettings,
+      activeWorktreeId,
+      resolvedCommitMessageAi,
+      setSourceControlCommitDraftIfEmpty,
+      worktreePath
+    ]
   )
 
   const handleGenerateCommitMessageClick = useCallback((): void => {
@@ -4175,9 +4155,7 @@ function SourceControlInner(): React.JSX.Element {
                   if (!activeWorktreeId) {
                     return
                   }
-                  setCommitDrafts((prev) =>
-                    writeCommitDraftForWorktree(prev, activeWorktreeId, value)
-                  )
+                  setSourceControlCommitDraft(activeWorktreeId, value)
                 }}
                 onGenerate={handleGenerateCommitMessageClick}
                 onCancelGenerate={handleCancelGenerate}
