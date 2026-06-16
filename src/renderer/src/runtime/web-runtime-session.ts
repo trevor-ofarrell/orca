@@ -114,6 +114,10 @@ export async function createWebRuntimeSessionBrowserTab(args: {
         worktree: toRuntimeWorktreeSelector(args.worktreeId),
         url: args.url,
         profileId: args.profileId ?? undefined,
+        // Why: this is the user clicking "New Browser Tab", so focus it. On a
+        // headless host this marks the tab active in the session snapshot so the
+        // reconcile keeps focus on it instead of snapping back to a terminal.
+        activate: true,
         // Why: paired web clients need the local tab immediately. The remote
         // pane will stream once the host webview registers; waiting here makes
         // the workspace appear to close while the host finishes mounting.

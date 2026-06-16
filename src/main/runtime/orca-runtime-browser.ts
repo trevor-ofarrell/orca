@@ -1331,7 +1331,13 @@ export class RuntimeBrowserCommands {
       if (!offscreen) {
         throw new BrowserError('browser_error', 'This host does not support browser panes.')
       }
-      return this.createBrowserTabOffscreen(offscreen, url, worktreeId, params.profileId)
+      return this.createBrowserTabOffscreen(
+        offscreen,
+        url,
+        worktreeId,
+        params.profileId,
+        params.activate
+      )
     }
     const { browserPageId } = await this.createBrowserTabInRenderer(
       url,
@@ -1739,7 +1745,8 @@ export class RuntimeBrowserCommands {
     offscreen: BrowserBackend,
     url: string,
     worktreeId?: string,
-    profileId?: string
+    profileId?: string,
+    activate?: boolean
   ): Promise<{ browserPageId: string }> {
     const { browserPageId } = await offscreen.createTab({ url, worktreeId, profileId })
     const bridge = this.host.getAgentBrowserBridge()
@@ -1747,9 +1754,14 @@ export class RuntimeBrowserCommands {
     if (bridge && wcId != null) {
       bridge.setActiveTab(wcId, worktreeId)
     }
-    // Why: mark the new tab active in the session snapshot so paired clients
-    // keep focus on it (the reconcile is snapshot-active-driven).
-    this.host.markHeadlessBrowserSessionTabActive?.(worktreeId, browserPageId)
+    // Why: only a user-initiated create (activate:true, e.g. the UI or a mobile
+    // HTML-link tap) should steal focus by marking the tab active in the session
+    // snapshot. Background/agent creates (CLI `tab create`, automation) must NOT,
+    // or they'd yank a connected client/mobile to the new tab. Mirrors the
+    // renderer path, which forwards `activate` and never force-focuses otherwise.
+    if (activate === true) {
+      this.host.markHeadlessBrowserSessionTabActive?.(worktreeId, browserPageId)
+    }
     return { browserPageId }
   }
 
