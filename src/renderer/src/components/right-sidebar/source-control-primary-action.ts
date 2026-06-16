@@ -14,6 +14,7 @@ import {
   describePushCount,
   describeSyncCounts
 } from './source-control-primary-action-titles'
+import { resolveLinkedReviewPrimaryAction } from './source-control-linked-review-primary-action'
 
 export type {
   PrimaryActionKind,
@@ -62,7 +63,8 @@ export function resolvePrimaryAction(inputs: PrimaryActionInputs): PrimaryAction
     isPRStateLoading,
     hostedReviewCreation,
     branchCommitsAhead,
-    hasCurrentBranch = true
+    hasCurrentBranch = true,
+    canPushLinkedReviewWithoutUpstream = false
   } = inputs
 
   // 1. Commit in flight — lock the primary no matter what else is true.
@@ -102,6 +104,7 @@ export function resolvePrimaryAction(inputs: PrimaryActionInputs): PrimaryAction
   }
 
   const hasStaged = stagedCount > 0
+  const hasOpenHostedReview = prState === 'open' || prState === 'draft'
 
   // 4. A path with both staged and unstaged edits can make lint-staged's
   // partial-stash restore fail after formatters rewrite the staged copy. Push
@@ -252,6 +255,14 @@ export function resolvePrimaryAction(inputs: PrimaryActionInputs): PrimaryAction
         ),
         disabled: true
       }
+    }
+
+    const linkedReviewAction = resolveLinkedReviewPrimaryAction({
+      hasOpenHostedReview,
+      canPushLinkedReviewWithoutUpstream
+    })
+    if (linkedReviewAction) {
+      return linkedReviewAction
     }
 
     return {

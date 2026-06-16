@@ -8659,7 +8659,9 @@
                   "484f45c439": "{{value0}} 진행 중…",
                   "74fc171e99": "강제 푸시 진행 중…",
                   "16aee3a5c1": "Commit 진행 중…",
-                  "e61b0d7a3c": "Check out a branch before publishing commits."
+                  "e61b0d7a3c": "Check out a branch before publishing commits.",
+                  "1d47e850cf": "Push updates to the linked review branch",
+                  "c39d0c75c3": "Linked review branch target is unavailable."
                 }
               }
             }
