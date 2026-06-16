@@ -237,6 +237,7 @@ import type {
   RuntimeMobileSessionTabGroup,
   RuntimeMobileSessionSnapshotTab,
   RuntimeMobileSessionTerminalTab,
+  RuntimeMobileSessionBrowserTab,
   RuntimeMobileSessionTabsRemovedResult,
   RuntimeMobileSessionTabsResult,
   RuntimeMobileSessionTabsSnapshot,
@@ -2568,19 +2569,32 @@ export class OrcaRuntimeService {
         options.force !== true &&
         options.onlyServeOwnedTerminals !== true
       ) {
+        // Why: terminals are stable/persisted so we normally skip a rebuild, but
+        // offscreen browser tabs are live and may have been created/closed since.
+        // Reconcile just the browser tabs against the live bridge instead of
+        // leaving a stale snapshot that omits a freshly-opened browser tab.
+        this.reconcileHeadlessMobileSessionBrowserTabs(entryWorktreeId, existing)
         continue
       }
-      const tabs = this.buildHeadlessMobileSessionTerminalTabs(
+      const terminalTabs = this.buildHeadlessMobileSessionTerminalTabs(
         entryWorktreeId,
         persistedTabs
       ).filter(
         (tab) => options.onlyServeOwnedTerminals !== true || this.hasServeOwnedPtyBinding(tab)
       )
+      // Why: offscreen browser panes are live-only (no persisted session entry),
+      // so include them on every hydrate regardless of the onlyServeOwnedTerminals
+      // filter, which is about terminal PTY ownership and never applies to browsers.
+      const browserTabs = this.buildHeadlessMobileSessionBrowserTabs(entryWorktreeId)
+      const tabs: RuntimeMobileSessionSnapshotTab[] = [...terminalTabs, ...browserTabs]
       if (tabs.length === 0) {
         continue
       }
-      const activeTab = this.pickHeadlessActiveTerminalTab(tabs)
-      const tabOrder = this.collectHeadlessParentTabOrder(tabs)
+      const activeTab = this.pickHeadlessActiveTerminalTab(terminalTabs)
+      const tabOrder = [
+        ...this.collectHeadlessParentTabOrder(terminalTabs),
+        ...browserTabs.map((tab) => tab.id)
+      ]
       const groupId = this.getHeadlessMobileSessionGroupId(entryWorktreeId)
       const mergedTabs =
         options.onlyServeOwnedTerminals === true && existing
@@ -2589,10 +2603,14 @@ export class OrcaRuntimeService {
       const mergedActiveTab =
         existing?.tabs.find((tab) => tab.id === existing.activeTabId) ??
         activeTab ??
-        (mergedTabs[0]?.type === 'terminal' ? mergedTabs[0] : null)
+        mergedTabs[0] ??
+        null
       const mergedTerminalTabs = mergedTabs.filter(
         (tab): tab is RuntimeMobileSessionTerminalTab => tab.type === 'terminal'
       )
+      const mergedBrowserOrder = mergedTabs
+        .filter((tab): tab is RuntimeMobileSessionBrowserTab => tab.type === 'browser')
+        .map((tab) => tab.id)
       this.mobileSessionTabsByWorktree.set(entryWorktreeId, {
         worktree: existing?.worktree ?? entryWorktreeId,
         publicationEpoch: `headless-hydrated:${Date.now().toString(36)}`,
@@ -2602,22 +2620,100 @@ export class OrcaRuntimeService {
         activeTabType: mergedActiveTab?.type ?? null,
         tabGroups:
           options.onlyServeOwnedTerminals === true && existing?.tabGroups
-            ? this.mergeMobileSessionTabGroups(
-                entryWorktreeId,
-                existing.tabGroups,
-                mergedTerminalTabs,
-                mergedActiveTab?.type === 'terminal' ? mergedActiveTab : null
+            ? this.appendBrowserTabOrder(
+                this.mergeMobileSessionTabGroups(
+                  entryWorktreeId,
+                  existing.tabGroups,
+                  mergedTerminalTabs,
+                  mergedActiveTab?.type === 'terminal' ? mergedActiveTab : null
+                ),
+                mergedBrowserOrder
               )
             : [
                 {
                   id: groupId,
-                  activeTabId: activeTab?.parentTabId ?? tabOrder[0] ?? null,
+                  activeTabId: mergedActiveTab?.id
+                    ? (activeTab?.parentTabId ?? mergedActiveTab.id)
+                    : (tabOrder[0] ?? null),
                   tabOrder
                 }
               ],
         tabs: mergedTabs
       })
     }
+  }
+
+  // Why: keep an existing snapshot's browser tabs in sync with the live bridge
+  // without rebuilding stable terminal state. Replaces browser entries with the
+  // current live set and rewrites the browser portion of the primary group order.
+  private reconcileHeadlessMobileSessionBrowserTabs(
+    worktreeId: string,
+    existing: RuntimeMobileSessionTabsSnapshot
+  ): void {
+    if (!this.offscreenBrowserBackend) {
+      return
+    }
+    const liveBrowserTabs = this.buildHeadlessMobileSessionBrowserTabs(worktreeId)
+    const liveIds = liveBrowserTabs.map((tab) => tab.id)
+    const existingBrowserIds = existing.tabs
+      .filter((tab): tab is RuntimeMobileSessionBrowserTab => tab.type === 'browser')
+      .map((tab) => tab.id)
+    const unchanged =
+      liveIds.length === existingBrowserIds.length &&
+      liveIds.every((id, index) => existingBrowserIds[index] === id)
+    if (unchanged) {
+      return
+    }
+    const nonBrowserTabs = existing.tabs.filter((tab) => tab.type !== 'browser')
+    const nextTabs: RuntimeMobileSessionSnapshotTab[] = [...nonBrowserTabs, ...liveBrowserTabs]
+    const liveIdSet = new Set(liveIds)
+    const tabGroups = this.appendBrowserTabOrder(
+      (existing.tabGroups ?? []).map((group) => ({
+        ...group,
+        // Drop closed browser ids; appendBrowserTabOrder re-adds the live ones.
+        tabOrder: group.tabOrder.filter(
+          (id) => liveIdSet.has(id) || !existingBrowserIds.includes(id)
+        )
+      })),
+      liveIds
+    )
+    const activeStillPresent = nextTabs.some((tab) => tab.id === existing.activeTabId)
+    const active = activeStillPresent
+      ? null
+      : (nextTabs.find((tab) => tab.isActive) ?? nextTabs[0] ?? null)
+    this.mobileSessionTabsByWorktree.set(worktreeId, {
+      ...existing,
+      publicationEpoch: `headless-hydrated:${Date.now().toString(36)}`,
+      snapshotVersion: existing.snapshotVersion + 1,
+      ...(activeStillPresent
+        ? {}
+        : { activeTabId: active?.id ?? null, activeTabType: active?.type ?? null }),
+      tabGroups,
+      tabs: nextTabs
+    })
+  }
+
+  // Why: browser session tabs have no parentTabId so the terminal-only group
+  // builder drops them from tabOrder. Append their ids to the primary group so
+  // paired clients render them in the tab bar.
+  private appendBrowserTabOrder(
+    groups: readonly RuntimeMobileSessionTabGroup[],
+    browserTabIds: readonly string[]
+  ): RuntimeMobileSessionTabGroup[] {
+    if (browserTabIds.length === 0) {
+      return [...groups]
+    }
+    const next = groups.map((group) => ({ ...group, tabOrder: [...group.tabOrder] }))
+    const target = next[0]
+    if (!target) {
+      return next
+    }
+    for (const id of browserTabIds) {
+      if (!target.tabOrder.includes(id)) {
+        target.tabOrder.push(id)
+      }
+    }
+    return next
   }
 
   private isServeOwnedPtyId(ptyId: string | null | undefined): boolean {
@@ -2834,6 +2930,33 @@ export class OrcaRuntimeService {
           }
         })
       })
+  }
+
+  // Why: headless serve backs browser panes with offscreen WebContents that live
+  // only in the BrowserManager, never in a renderer graph. Without surfacing them
+  // as session tabs, a session.tabs snapshot (e.g. on terminal open) prunes the
+  // paired browser tab and closing it fails with tab_not_found. Synthesize browser
+  // session tabs from the live bridge so they are first-class alongside terminals.
+  private buildHeadlessMobileSessionBrowserTabs(
+    worktreeId: string
+  ): RuntimeMobileSessionBrowserTab[] {
+    if (!this.offscreenBrowserBackend || !this.agentBrowserBridge?.tabList) {
+      return []
+    }
+    return this.agentBrowserBridge.tabList(worktreeId).tabs.map((tab) => ({
+      type: 'browser' as const,
+      // Why: an offscreen page has no separate workspace identity, so the page id
+      // is its own workspace id (matches the server's browserWorkspaceId fallback).
+      id: tab.browserPageId,
+      title: tab.title || tab.url || 'Browser',
+      browserWorkspaceId: tab.browserPageId,
+      browserPageId: tab.browserPageId,
+      url: tab.url || 'about:blank',
+      loading: false,
+      canGoBack: false,
+      canGoForward: false,
+      isActive: tab.active === true
+    }))
   }
 
   private collectPersistedTerminalLeafIds(layout: TerminalLayoutSnapshot | undefined): string[] {
@@ -3274,10 +3397,42 @@ export class OrcaRuntimeService {
         // just whichever leaf happened to be first in the session snapshot.
         this.notifier?.closeTerminal(tab.parentTabId)
       }
+    } else if (tab.type === 'browser' && this.offscreenBrowserBackend) {
+      // Why: headless browser tabs are offscreen WebContents with no renderer to
+      // route closeSessionTab to. Close the page directly and drop it from the
+      // snapshot so paired clients stop showing it.
+      await this.closeHeadlessMobileBrowserTab(worktreeId, snapshot!, tab)
     } else {
       this.notifier?.closeSessionTab?.(tab.id, worktreeId)
     }
     return { closed: true }
+  }
+
+  private async closeHeadlessMobileBrowserTab(
+    worktreeId: string,
+    snapshot: RuntimeMobileSessionTabsSnapshot,
+    tab: RuntimeMobileSessionBrowserTab
+  ): Promise<void> {
+    if (tab.browserPageId) {
+      await this.offscreenBrowserBackend?.closeTab(tab.browserPageId).catch(() => {})
+    }
+    const nextTabs = snapshot.tabs.filter((candidate) => candidate.id !== tab.id)
+    const active = nextTabs.find((candidate) => candidate.isActive) ?? nextTabs[0] ?? null
+    const nextSnapshot: RuntimeMobileSessionTabsSnapshot = {
+      ...snapshot,
+      publicationEpoch: `headless:${Date.now().toString(36)}`,
+      snapshotVersion: snapshot.snapshotVersion + 1,
+      activeTabId: active?.id ?? null,
+      activeTabType: active?.type ?? null,
+      tabGroups: (snapshot.tabGroups ?? []).map((group) => ({
+        ...group,
+        tabOrder: group.tabOrder.filter((id) => id !== tab.id),
+        activeTabId: group.activeTabId === tab.id ? null : group.activeTabId
+      })),
+      tabs: nextTabs
+    }
+    this.mobileSessionTabsByWorktree.set(worktreeId, nextSnapshot)
+    this.emitMobileSessionTabsSnapshot(nextSnapshot)
   }
 
   private closeHeadlessMobileTerminalTab(
@@ -14332,6 +14487,15 @@ export class OrcaRuntimeService {
     snapshot: RuntimeMobileSessionTabsSnapshot,
     tab: RuntimeMobileSessionSnapshotTab
   ): boolean {
+    // Why: headless offscreen browser tabs live only on the server and are
+    // re-derived from the live bridge on each hydrate, so a renderer-graph merge
+    // must keep them rather than prune them as "not in the renderer graph".
+    if (tab.type === 'browser') {
+      return (
+        Boolean(this.offscreenBrowserBackend) &&
+        this.isHeadlessMobileSessionPublication(snapshot.publicationEpoch)
+      )
+    }
     if (tab.type !== 'terminal') {
       return false
     }
