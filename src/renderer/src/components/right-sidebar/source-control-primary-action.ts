@@ -39,13 +39,15 @@ export type {
  *   1. In-flight commit locks the primary to a disabled "Commit".
  *   2. In-flight remote operation keeps the current label but disables it.
  *   3. Unresolved conflicts block the commit path entirely.
- *   4. Has partially staged files → "Stage All" to avoid hook-time partial
+ *   4. Create PR intent can own the primary; partial-staging prerequisites
+ *      are exposed as a visible sibling action by CommitArea.
+ *   5. Has partially staged files → "Stage All" to avoid hook-time partial
  *      stash conflicts.
- *   5. Has staged files + message → plain "Commit" (compound flows live in
- *      the dropdown; after the commit lands, step 7 rotates the primary to
- *      the appropriate single remote action).
- *   6. Has staged files + no message → disabled "Commit" with a reason.
- *   7. Clean tree → adaptive remote action (or disabled "Commit" no-op).
+ *   6. Has staged files + message → plain "Commit" (compound flows live in
+ *      the dropdown; after the commit lands, the clean-tree rung rotates
+ *      the primary to the appropriate single remote action).
+ *   7. Has staged files + no message → disabled "Commit" with a reason.
+ *   8. Clean tree → adaptive remote action (or disabled "Commit" no-op).
  *
  * An undefined upstream status means fetchUpstreamStatus has not resolved
  * yet for this worktree. We return a disabled Commit so the button has a

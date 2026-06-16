@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { CommitArea, ConflictSummaryCard, OperationBanner } from './SourceControl'
 import { resolvePrimaryAction, type PrimaryActionInputs } from './source-control-primary-action'
 import { resolveDropdownItems, type DropdownActionKind } from './source-control-dropdown-items'
+import { resolveCreatePrIntentPrerequisiteAction } from './source-control-primary-create-pr-intent-action'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 function buildInputs(overrides: Partial<PrimaryActionInputs> = {}): PrimaryActionInputs {
@@ -50,7 +51,7 @@ function baseProps(overrides: Partial<PrimaryActionInputs> = {}) {
   }
 }
 
-function renderCommitArea(props: ReturnType<typeof baseProps>): string {
+function renderCommitArea(props: Parameters<typeof CommitArea>[0]): string {
   return renderToStaticMarkup(
     <TooltipProvider>
       <CommitArea {...props} />
@@ -326,6 +327,39 @@ describe('CommitArea', () => {
     const button = firstButton(renderCommitArea({ ...props, isCommitting: true }))
     expect(button).toContain('animate-spin')
     expect(button).not.toContain('lucide-check')
+  })
+
+  it('shows Stage All beside Create PR intent when partial staging blocks commit', () => {
+    const input = buildInputs({
+      stagedCount: 1,
+      hasUnstagedChanges: true,
+      hasStageableChanges: true,
+      hasPartiallyStagedChanges: true,
+      hasMessage: true,
+      upstreamStatus: { hasUpstream: true, ahead: 0, behind: 0 },
+      hostedReviewCreation: {
+        provider: 'github',
+        review: null,
+        canCreate: false,
+        blockedReason: 'dirty',
+        nextAction: 'commit'
+      }
+    })
+    const markup = renderCommitArea({
+      ...baseProps(input),
+      createPrIntentPrerequisiteAction: resolveCreatePrIntentPrerequisiteAction(input),
+      onCreatePrIntentPrerequisiteAction: vi.fn()
+    })
+
+    const stageAllButton = buttonContaining(markup, 'Stage All')
+    expect(stageAllButton).not.toContain('disabled=""')
+    expect(stageAllButton).toContain('lucide-plus')
+    expect(buttonContaining(markup, 'Create PR')).not.toContain('disabled=""')
+    expect(
+      (markup.match(/<button\b[\s\S]*?<\/button>/g) ?? []).some((button) =>
+        button.includes('Commit</button>')
+      )
+    ).toBe(false)
   })
 })
 

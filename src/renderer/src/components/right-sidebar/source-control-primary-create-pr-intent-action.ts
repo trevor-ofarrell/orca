@@ -55,3 +55,37 @@ export function resolveCreatePrIntentPrimaryAction(
     disabled: false
   }
 }
+
+export function resolveCreatePrIntentPrerequisiteAction(
+  inputs: PrimaryActionInputs
+): PrimaryAction | null {
+  if (inputs.isPrIntentInFlight || inputs.isCommitting || inputs.isRemoteOperationActive) {
+    return null
+  }
+  const createPrIntent = resolveCreatePrIntentEligibility({
+    stagedCount: inputs.stagedCount,
+    hasStageableChanges: inputs.hasStageableChanges,
+    hasMessage: inputs.hasMessage,
+    hasUnresolvedConflicts: inputs.hasUnresolvedConflicts,
+    upstreamStatus: inputs.upstreamStatus,
+    hostedReviewCreation: inputs.hostedReviewCreation,
+    branchCommitsAhead: inputs.branchCommitsAhead,
+    hasCurrentBranch: inputs.hasCurrentBranch
+  })
+  if (!createPrIntent.eligible || inputs.stagedCount === 0 || !inputs.hasPartiallyStagedChanges) {
+    return null
+  }
+
+  return {
+    kind: 'stage',
+    label: translate(
+      'auto.components.right.sidebar.source.control.primary.action.18a0fca877',
+      'Stage All'
+    ),
+    title: translate(
+      'auto.components.right.sidebar.source.control.primary.action.2d8f185fbc',
+      'Stage all changes before committing partially staged files'
+    ),
+    disabled: false
+  }
+}

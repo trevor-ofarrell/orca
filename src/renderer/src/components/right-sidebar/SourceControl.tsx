@@ -211,6 +211,7 @@ import {
   resolveCreatePrIntentRemoteStep,
   type CreatePrIntentRunToken
 } from './source-control-create-pr-intent-flow'
+import { resolveCreatePrIntentPrerequisiteAction } from './source-control-primary-create-pr-intent-action'
 import {
   createRunningPullRequestGenerationRecord,
   getPullRequestGenerationRecordKey,
@@ -3055,6 +3056,52 @@ function SourceControlInner(): React.JSX.Element {
     unresolvedConflicts.length
   ])
 
+  const createPrIntentPrerequisiteAction = useMemo(
+    () =>
+      primaryAction.kind === 'create_pr_intent'
+        ? resolveCreatePrIntentPrerequisiteAction({
+            stagedCount: grouped.staged.length,
+            hasUnstagedChanges,
+            hasStageableChanges,
+            hasPartiallyStagedChanges,
+            hasMessage: commitMessage.trim().length > 0,
+            hasUnresolvedConflicts: unresolvedConflicts.length > 0,
+            isCommitting,
+            isRemoteOperationActive: isRemoteOperationActive || isAbortingOperation,
+            upstreamStatus: remoteStatus,
+            prState: hostedReview?.state ?? null,
+            isPRStateLoading: isHostedReviewStateLoading,
+            inFlightRemoteOpKind,
+            hostedReviewCreation,
+            branchCommitsAhead:
+              branchSummary?.status === 'ready' ? (branchSummary.commitsAhead ?? 0) : undefined,
+            hasCurrentBranch: Boolean(branchName),
+            isPrIntentInFlight: isCreatePrIntentInFlight
+          })
+        : null,
+    [
+      branchName,
+      branchSummary?.commitsAhead,
+      branchSummary?.status,
+      commitMessage,
+      grouped.staged.length,
+      hasPartiallyStagedChanges,
+      hasStageableChanges,
+      hasUnstagedChanges,
+      hostedReview?.state,
+      hostedReviewCreation,
+      inFlightRemoteOpKind,
+      isAbortingOperation,
+      isCommitting,
+      isCreatePrIntentInFlight,
+      isHostedReviewStateLoading,
+      isRemoteOperationActive,
+      primaryAction.kind,
+      remoteStatus,
+      unresolvedConflicts.length
+    ]
+  )
+
   const dropdownItems: DropdownEntry[] = useMemo(
     () =>
       resolveDropdownItems({
@@ -4649,6 +4696,7 @@ function SourceControlInner(): React.JSX.Element {
                 isRemoteOperationActive={isRemoteOperationActive || isAbortingOperation}
                 inFlightRemoteOpKind={inFlightRemoteOpKind}
                 primaryAction={primaryAction}
+                createPrIntentPrerequisiteAction={createPrIntentPrerequisiteAction}
                 dropdownItems={dropdownItems}
                 fixCommitFailureRecipe={getLaunchActionRecipe('fixCommitFailure')}
                 onCommitMessageChange={(value) => {
@@ -4664,6 +4712,7 @@ function SourceControlInner(): React.JSX.Element {
                 onSaveLaunchActionDefault={saveLaunchActionDefault}
                 onOpenSourceControlAiSettings={openSourceControlAiSettings}
                 onFixCommitFailureWithAI={handleFixCommitFailureWithAI}
+                onCreatePrIntentPrerequisiteAction={handleStageAllPrimary}
                 onPrimaryAction={handlePrimaryClick}
                 onDropdownAction={handleActionInvoke}
               />
@@ -5367,6 +5416,7 @@ type CommitAreaProps = {
   isRemoteOperationActive: boolean
   inFlightRemoteOpKind: RemoteOpKind | null
   primaryAction: PrimaryAction
+  createPrIntentPrerequisiteAction?: PrimaryAction | null
   dropdownItems: DropdownEntry[]
   fixCommitFailureRecipe?: SourceControlActionRecipe
   onCommitMessageChange: (message: string) => void
@@ -5379,6 +5429,7 @@ type CommitAreaProps = {
   ) => void | Promise<void>
   onOpenSourceControlAiSettings?: () => void
   onFixCommitFailureWithAI: (promptOverride?: string) => Promise<boolean> | boolean
+  onCreatePrIntentPrerequisiteAction?: () => void
   onPrimaryAction: () => void
   onDropdownAction: (kind: DropdownActionKind) => void
 }
@@ -5407,6 +5458,7 @@ export function CommitArea({
   isRemoteOperationActive,
   inFlightRemoteOpKind,
   primaryAction,
+  createPrIntentPrerequisiteAction,
   dropdownItems,
   fixCommitFailureRecipe,
   onCommitMessageChange,
@@ -5415,6 +5467,7 @@ export function CommitArea({
   onSaveLaunchActionDefault,
   onOpenSourceControlAiSettings,
   onFixCommitFailureWithAI,
+  onCreatePrIntentPrerequisiteAction,
   onPrimaryAction,
   onDropdownAction
 }: CommitAreaProps): React.JSX.Element {
@@ -5449,10 +5502,6 @@ export function CommitArea({
   // tooltips.
   const showChevronSpinner =
     (isCommitting || isCreatingPr || isRemoteOperationActive) && !showSpinner
-  const secondaryCommitAction =
-    primaryAction.kind === 'create_pr_intent'
-      ? dropdownItems.find((entry) => entry.kind === 'commit')
-      : undefined
   const commitFailureSummary = useMemo(
     () => (commitError ? summarizeCommitFailure(commitError) : null),
     [commitError]
@@ -5514,6 +5563,9 @@ export function CommitArea({
   // download/save affordance. The icon is decorative; the label and
   // title attribute carry the meaning for assistive tech.
   const PrimaryIcon = PRIMARY_ICONS[primaryAction.kind]
+  const PrerequisiteIcon = createPrIntentPrerequisiteAction
+    ? PRIMARY_ICONS[createPrIntentPrerequisiteAction.kind]
+    : null
 
   const hasMessage = commitMessage.trim().length > 0
   const describedBy = [
@@ -5635,7 +5687,7 @@ export function CommitArea({
       <div
         className={cn(showComposer ? 'mt-1 flex items-stretch gap-1' : 'flex items-stretch gap-1')}
       >
-        {secondaryCommitAction && secondaryCommitAction.kind !== 'separator' ? (
+        {createPrIntentPrerequisiteAction ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="inline-flex shrink-0">
@@ -5643,18 +5695,22 @@ export function CommitArea({
                   type="button"
                   size="xs"
                   variant="outline"
-                  disabled={secondaryCommitAction.disabled}
-                  onClick={() => onDropdownAction(secondaryCommitAction.kind)}
+                  disabled={
+                    createPrIntentPrerequisiteAction.disabled || !onCreatePrIntentPrerequisiteAction
+                  }
+                  onClick={() => onCreatePrIntentPrerequisiteAction?.()}
                   className="px-2.5 text-[11px]"
-                  title={secondaryCommitAction.title}
+                  title={createPrIntentPrerequisiteAction.title}
                 >
-                  <Check className="size-3.5" aria-hidden="true" />
-                  {secondaryCommitAction.label}
+                  {PrerequisiteIcon ? (
+                    <PrerequisiteIcon className="size-3.5" aria-hidden="true" />
+                  ) : null}
+                  {createPrIntentPrerequisiteAction.label}
                 </Button>
               </span>
             </TooltipTrigger>
             <TooltipContent side="top" sideOffset={6} className="max-w-72">
-              {secondaryCommitAction.title}
+              {createPrIntentPrerequisiteAction.title}
             </TooltipContent>
           </Tooltip>
         ) : null}
