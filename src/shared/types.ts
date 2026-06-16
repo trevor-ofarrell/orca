@@ -1044,6 +1044,7 @@ export type PRInfo = {
   mergeable: PRMergeableState
   reviewDecision?: PRReviewDecision | null
   autoMergeEnabled?: boolean
+  autoMergeAllowed?: boolean | null
   mergeQueueRequired?: boolean | null
   mergeMethodSettings?: GitHubPRMergeMethodSettings
   mergeStateStatus?: string | null
@@ -1317,6 +1318,7 @@ export type GitHubWorkItem = {
   checksSummary?: GitHubPRCheckSummary
   mergeable?: PRMergeableState
   autoMergeEnabled?: boolean
+  autoMergeAllowed?: boolean | null
   mergeQueueRequired?: boolean | null
   mergeMethodSettings?: GitHubPRMergeMethodSettings
   mergeStateStatus?: string | null
