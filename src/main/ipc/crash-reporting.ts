@@ -540,21 +540,21 @@ export function registerCrashReportingHandlers(store: CrashReportStore): void {
             // Why: startup prompts are dismissed before the user can send from
             // the still-open dialog, so successful uploads must update storage.
             const sent = await store.markDismissedSent(report.id)
-            return { ok: true, report: sent ?? { ...report, status: 'sent' } }
+            return { ok: true, report: sent ?? { ...report, status: 'sent' }, diagnosticBundle }
           } catch (error) {
             console.error('[crash-reporting] Failed to mark dismissed crash report sent:', error)
-            return { ok: true, report: { ...report, status: 'sent' } }
+            return { ok: true, report: { ...report, status: 'sent' }, diagnosticBundle }
           }
         }
         try {
           const sent = await store.markSent(report.id)
-          return { ok: true, report: sent ?? { ...report, status: 'sent' } }
+          return { ok: true, report: sent ?? { ...report, status: 'sent' }, diagnosticBundle }
         } catch (error) {
           // Why: the upstream submission already succeeded. A local persistence
           // failure must not present as upload failure or invite duplicate sends
           // during this app session.
           console.error('[crash-reporting] Failed to mark crash report sent:', error)
-          return { ok: true, report: { ...report, status: 'sent' } }
+          return { ok: true, report: { ...report, status: 'sent' }, diagnosticBundle }
         }
       } finally {
         inFlightSubmissions.delete(report.id)

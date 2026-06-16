@@ -166,7 +166,11 @@ export function CrashReportDialogSurface({
       if (!result.ok) {
         if (result.diagnosticBundle?.status === 'uploaded') {
           toast.error(
-            `Failed to send crash report. Diagnostic ticket ${result.diagnosticBundle.ticketId} was uploaded but not linked.`
+            translate(
+              'auto.components.crash.report.CrashReportDialog.b2e36f53a1',
+              'Failed to send crash report. Diagnostic ticket {{value0}} was uploaded but not linked.',
+              { value0: result.diagnosticBundle.ticketId }
+            )
           )
         } else {
           toast.error(

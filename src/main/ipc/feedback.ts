@@ -123,7 +123,7 @@ export async function submitFeedback(
   } catch (error) {
     // Why: falling back on any network-level failure preserves the prior
     // behavior where DNS/connect failures on the primary host transparently
-    // try the website-hosted versioned endpoint.
+    // try the legacy API endpoint.
     return submitFallbackFeedback(body, error)
   }
 }

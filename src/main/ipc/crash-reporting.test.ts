@@ -220,7 +220,17 @@ describe('registerCrashReportingHandlers', () => {
       githubEmail: null
     })
 
-    expect(result).toEqual({ ok: true, report: sent })
+    expect(result).toEqual({
+      ok: true,
+      report: sent,
+      diagnosticBundle: {
+        status: 'uploaded',
+        ticketId: 'ticketabcdefghijklmnop',
+        bundleSubmissionId: 'bundleabcdefghijklmnop',
+        bytes: 25,
+        spanCount: 1
+      }
+    })
     expect(submitFeedbackMock).toHaveBeenCalledWith({
       feedback: expect.stringContaining('ticketabcdefghijklmnop'),
       submissionType: 'crash',
@@ -423,7 +433,17 @@ describe('registerCrashReportingHandlers', () => {
       githubEmail: null
     })
 
-    expect(result).toEqual({ ok: true, report: sent })
+    expect(result).toEqual({
+      ok: true,
+      report: sent,
+      diagnosticBundle: {
+        status: 'uploaded',
+        ticketId: 'ticketabcdefghijklmnop',
+        bundleSubmissionId: 'bundleabcdefghijklmnop',
+        bytes: 25,
+        spanCount: 1
+      }
+    })
     expect(submitFeedbackMock).toHaveBeenCalledWith({
       feedback: expect.stringContaining('sent from startup prompt'),
       submissionType: 'crash',
