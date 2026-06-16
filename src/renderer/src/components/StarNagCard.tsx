@@ -106,7 +106,6 @@ export function StarNagCard(): React.JSX.Element | null {
       }
       return
     }
-    await window.api.starNag.complete()
     if (mountedRef.current) {
       setVisible(false)
     }
