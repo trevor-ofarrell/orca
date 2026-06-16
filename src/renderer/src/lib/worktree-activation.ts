@@ -245,6 +245,7 @@ export function activateAndRevealWorktree(
     issueCommand?: IssueCommandLaunch
     sidebarRevealBehavior?: PendingSidebarWorktreeReveal['behavior']
     notifyHostRuntime?: boolean
+    revealInSidebar?: boolean
   }
 ): ActivateAndRevealResult | false {
   const state = useAppStore.getState()
@@ -331,10 +332,12 @@ export function activateAndRevealWorktree(
   }
 
   // 6. Reveal in sidebar
-  if (opts?.sidebarRevealBehavior) {
-    state.revealWorktreeInSidebar(worktreeId, { behavior: opts.sidebarRevealBehavior })
-  } else {
-    state.revealWorktreeInSidebar(worktreeId)
+  if (opts?.revealInSidebar !== false) {
+    if (opts?.sidebarRevealBehavior) {
+      state.revealWorktreeInSidebar(worktreeId, { behavior: opts.sidebarRevealBehavior })
+    } else {
+      state.revealWorktreeInSidebar(worktreeId)
+    }
   }
 
   if (opts?.notifyHostRuntime !== false) {

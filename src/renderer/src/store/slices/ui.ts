@@ -81,6 +81,7 @@ import {
   cloneDefaultWorkspaceStatuses,
   normalizeWorkspaceStatuses
 } from '../../../../shared/workspace-statuses'
+import { clampMarkdownTocPanelWidth } from '../../../../shared/markdown-toc-panel-width'
 import { normalizeKagiSessionLink } from '../../../../shared/browser-url'
 import type { OrcaHookScriptKind } from '../../lib/orca-hook-trust'
 import type { SettingsNavTarget } from '@/lib/settings-navigation-types'
@@ -753,6 +754,10 @@ export type UISlice = {
   markSetupGuideBrowserMilestoneMigrated: (legacyComplete: boolean) => void
   browserImportHintHidden: boolean
   setBrowserImportHintHidden: (hidden: boolean) => void
+  mobileEmulatorTabIntroDismissed: boolean
+  dismissMobileEmulatorTabIntro: () => void
+  mobileEmulatorAgentSetupDismissed: boolean
+  dismissMobileEmulatorAgentSetup: () => void
   projectOrderManualDefaultNoticeDismissed: boolean
   dismissProjectOrderManualDefaultNotice: () => void
   usageEmptyStateDismissed: boolean
@@ -1776,6 +1781,24 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       window.api.ui.set({ browserImportHintHidden: hidden }).catch(console.error)
       return { browserImportHintHidden: hidden }
     }),
+  mobileEmulatorTabIntroDismissed: false,
+  dismissMobileEmulatorTabIntro: () =>
+    set((s) => {
+      if (s.mobileEmulatorTabIntroDismissed) {
+        return s
+      }
+      window.api.ui.set({ mobileEmulatorTabIntroDismissed: true }).catch(console.error)
+      return { mobileEmulatorTabIntroDismissed: true }
+    }),
+  mobileEmulatorAgentSetupDismissed: false,
+  dismissMobileEmulatorAgentSetup: () =>
+    set((s) => {
+      if (s.mobileEmulatorAgentSetupDismissed) {
+        return s
+      }
+      window.api.ui.set({ mobileEmulatorAgentSetupDismissed: true }).catch(console.error)
+      return { mobileEmulatorAgentSetupDismissed: true }
+    }),
   projectOrderManualDefaultNoticeDismissed: true,
   dismissProjectOrderManualDefaultNotice: () =>
     set((s) => {
@@ -2136,6 +2159,11 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
           s.rightSidebarWidth,
           MAX_RIGHT_SIDEBAR_WIDTH
         ),
+        markdownTocPanelWidth: clampMarkdownTocPanelWidth(
+          ui.markdownTocPanelWidth,
+          undefined,
+          s.markdownTocPanelWidth
+        ),
         rightSidebarOpen: typeof ui.rightSidebarOpen === 'boolean' ? ui.rightSidebarOpen : true,
         rightSidebarTab: rightSidebarRoute.rightSidebarTab,
         rightSidebarExplorerView: rightSidebarRoute.rightSidebarExplorerView,
@@ -2216,6 +2244,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
         setupGuideBrowserMilestoneLegacyComplete:
           ui.setupGuideBrowserMilestoneLegacyComplete === true,
         browserImportHintHidden: ui.browserImportHintHidden === true,
+        mobileEmulatorTabIntroDismissed: ui.mobileEmulatorTabIntroDismissed === true,
+        mobileEmulatorAgentSetupDismissed: ui.mobileEmulatorAgentSetupDismissed === true,
         projectOrderManualDefaultNoticeDismissed:
           ui.projectOrderManualDefaultNoticeDismissed === true,
         // Why: default false when undefined so existing users still see the CTA;
