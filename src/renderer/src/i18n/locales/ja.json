@@ -8568,7 +8568,8 @@
             "ef182dcb12": "検索",
             "fc3095d2ed": "エクスプローラ",
             "aiVaultSessionHistory": "Agents",
-            "folderWorkspaces": "Attached worktrees"
+            "folderWorkspaces": "添付ワークツリー",
+            "parentPrChecks": "PRチェック"
           },
           "right": {
             "panel": {
@@ -9836,6 +9837,70 @@
                   "f1c0179002": "ストリームはフレームを生成していません。"
                 }
               }
+            },
+            "mobile": {
+              "emulator": {
+                "agent": {
+                  "setup": {
+                    "state": {
+                      "fdcca1ec75": "登録中...",
+                      "69fb2c2289": "有効",
+                      "c6705092ba": "PATH を修正",
+                      "7c1b6bdb1e": "有効化",
+                      "51074ccb05": "CLI ステータスの読み込みに失敗しました。",
+                      "35dea1ae12": "agent 制御の準備ができました。",
+                      "9dff3a6338": "スキルがインストールされています。Orca CLI を有効化してセットアップを完了してください。",
+                      "15986a1080": "Orca CLI の準備ができました。スキルをインストールしてセットアップを完了してください。",
+                      "4c26913def": "まだセットアップが完了していません。agent 制御を有効にするには、両方のステップを完了してください。",
+                      "c94ff11e91": "セットアップ状況を再確認できませんでした。",
+                      "2b519eed94": "Orca CLI を PATH に登録しました。"
+                    }
+                  }
+                },
+                "tab": {
+                  "intro": {
+                    "actions": {
+                      "68a5dc6604": "モバイルエミュレーターを非表示にできませんでした。"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "MobileEmulatorAgentSetupGuide": {
+            "2fda9ff015": "agent 制御をセットアップ",
+            "0ac0fef514": "agent 制御の準備ができました。",
+            "2bdfff8763": "agent 制御（オプション）。",
+            "72736b051f": "agents にこのシミュレーターを操作させたい場合は、Orca CLI + スキルをセットアップしてください。",
+            "d10ae98046": "完了",
+            "3756cbeca7": "後で",
+            "6d950431d2": "非表示",
+            "ebceac65a4": "セットアップ",
+            "3f003507f4": "設定で完全なセットアップを開く"
+          },
+          "MobileEmulatorAgentSetupGuideSteps": {
+            "9b49d892e3": "Orca CLI を有効化",
+            "3d8dc52c93": "agent シェルでエミュレーター制御用の orca コマンドを登録します。",
+            "21f5687c07": "Orca CLI スキル",
+            "64fb057667": "このワークツリーの orca エミュレーターコマンドを agents に教えます。",
+            "5c59ea96ca": "Mobile emulator Orca CLI skill setup",
+            "bff5341ac3": "Mobile emulator Orca CLI skill install terminal"
+          },
+          "MobileEmulatorTabIntroCallout": {
+            "1924982130": "閉じる",
+            "5789936d9a": "agents が画面を操作している間に iOS シミュレーターをプレビューできます。",
+            "8014b4b80b": "保持",
+            "6e051a40b7": "非表示"
+          },
+          "mobile": {
+            "emulator": {
+              "hidden": {
+                "toast": {
+                  "e8f098a870": "モバイルエミュレーターを非表示にしました",
+                  "c46c979c1d": "いつでもモバイルエミュレーターを再有効化できます",
+                  "600f9a745a": "設定 › モバイルエミュレーター"
+                }
+              }
             }
           }
         }
@@ -11023,6 +11088,47 @@
           "countMany": "{{value0}} attached worktrees",
           "emptyTitle": "No attached worktrees yet",
           "emptyCopy": "Worktrees created from this workspace will show up here."
+        },
+        "FolderWorkspacePrChecksPanel": {
+          "unavailable": "PRチェックはフォルダーワークスペースでのみ表示されます。",
+          "refresh": "PRチェックを更新",
+          "emptyTitle": "添付ワークツリーはまだありません",
+          "emptyCopy": "このフォルダーワークスペースにワークツリーを添付すると、ここにPRチェックが表示されます。",
+          "openChecksTab": "{{value0}} のチェックタブを開く",
+          "openReviewExternally": "{{value0}} を外部で開く",
+          "summary": "{{value0}} 件添付 · PR/MRあり {{value1}} 件 · 要対応 {{value2}} 件 · 保留中 {{value3}} 件 · 成功 {{value4}} 件 · PRなし {{value5}} 件 · 不明 {{value6}} 件",
+          "showDetails": "{{value0}} のPRチェック詳細を表示",
+          "hideDetails": "{{value0}} のPRチェック詳細を非表示"
+        },
+        "parentPrChecks": {
+          "rowSummary": {
+            "failingCount": "{{value0}} 件失敗",
+            "pendingCount": "{{value0}} 件保留中",
+            "checksFailing": "チェック失敗",
+            "mergeConflicts": "マージ競合",
+            "checksPending": "チェック保留中",
+            "checksPassing": "チェック成功",
+            "merged": "マージ済み",
+            "closedWithoutMerge": "マージせずにクローズ",
+            "draftReview": "下書きレビュー",
+            "noCheckSignal": "チェック信号なし",
+            "reviewUnavailable": "レビュー状態を取得できません",
+            "noPrLinked": "PR未リンク",
+            "detailsUnavailable": "レビュー詳細を取得できません",
+            "refreshFailed": "更新に失敗しました",
+            "checking": "レビュー状態を確認中…",
+            "notFetched": "状態はまだ取得されていません",
+            "unavailableWorktree": "このワークツリーでは利用できません"
+          },
+          "groups": {
+            "needsAttention": "要対応",
+            "pending": "保留中",
+            "merged": "マージ済み",
+            "passing": "成功",
+            "draftOrNoChecks": "下書き / チェックなし",
+            "noPr": "PRなし",
+            "unavailable": "利用不可"
+          }
         }
       },
       "link": {
