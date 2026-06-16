@@ -1158,7 +1158,7 @@ export default function SmartWorkspaceNameField({
   return (
     <div className="min-w-0 space-y-1.5">
       {textOnly ? null : (
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2 border-b border-border/40">
           <Tabs
             value={mode}
             onValueChange={(next) => {
@@ -1177,7 +1177,7 @@ export default function SmartWorkspaceNameField({
             <TabsList
               ref={tabsListRef}
               variant="line"
-              className="h-7 w-full justify-start gap-4 border-b border-border/40 px-0"
+              className="h-7 w-full justify-start gap-4 px-0"
               onFocusCapture={(event) => {
                 // Why: Radix Tabs uses roving focus and re-applies tabindex=0 to
                 // the active trigger on every render, so we can't keep it out of
