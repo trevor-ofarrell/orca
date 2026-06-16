@@ -9,6 +9,7 @@ import { app, ipcMain, net } from 'electron'
 const FEEDBACK_API_URL = 'https://www.onorca.dev/v1/feedback'
 const FEEDBACK_API_FALLBACK_URL = 'https://api.onorca.dev/v1/feedback'
 const FEEDBACK_REQUEST_TIMEOUT_MS = 10_000
+const DIAGNOSTIC_BUNDLE_CONTENT_TYPE = 'application/x-ndjson'
 
 export type FeedbackSubmissionType = 'feedback' | 'crash'
 
@@ -17,6 +18,13 @@ export type FeedbackSubmitArgs = {
   submitAnonymously?: boolean
   githubLogin: string | null
   githubEmail: string | null
+}
+
+export type FeedbackDiagnosticBundleAttachment = {
+  bundleSubmissionId: string
+  content: string
+  bytes: number
+  spanCount: number
 }
 
 type FeedbackSubmitBody = {
@@ -28,6 +36,7 @@ type FeedbackSubmitBody = {
   platform: NodeJS.Platform
   osRelease: string
   arch: string
+  diagnosticBundle?: FeedbackDiagnosticBundleAttachment
 }
 
 export type FeedbackSubmitResult =
@@ -36,6 +45,7 @@ export type FeedbackSubmitResult =
 
 type InternalFeedbackSubmitArgs = FeedbackSubmitArgs & {
   submissionType?: FeedbackSubmissionType
+  diagnosticBundle?: FeedbackDiagnosticBundleAttachment
 }
 
 // Why: the Slack notification and any follow-up investigation need to know
@@ -57,7 +67,10 @@ function buildSubmitBody(args: InternalFeedbackSubmitArgs): FeedbackSubmitBody {
     appVersion: app.getVersion(),
     platform: process.platform,
     osRelease: os.release(),
-    arch: process.arch
+    arch: process.arch,
+    ...(args.submissionType === 'crash' && args.diagnosticBundle
+      ? { diagnosticBundle: args.diagnosticBundle }
+      : {})
   }
 }
 
@@ -67,14 +80,59 @@ async function postFeedback(url: string, body: FeedbackSubmitBody): Promise<Resp
   // submission flows pending forever.
   const timeout = setTimeout(() => controller.abort(), FEEDBACK_REQUEST_TIMEOUT_MS)
   try {
-    return await net.fetch(url, {
+    const init: RequestInit = {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      ...feedbackRequestBodyInit(body),
       signal: controller.signal
-    })
+    }
+    return await net.fetch(url, init)
   } finally {
     clearTimeout(timeout)
+  }
+}
+
+function feedbackRequestBodyInit(body: FeedbackSubmitBody): Pick<RequestInit, 'body' | 'headers'> {
+  if (!body.diagnosticBundle) {
+    return {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }
+  }
+
+  const formData = new FormData()
+  appendFeedbackFormField(formData, 'feedback', body.feedback)
+  appendFeedbackFormField(formData, 'submissionType', body.submissionType)
+  appendFeedbackFormField(formData, 'githubLogin', body.githubLogin)
+  appendFeedbackFormField(formData, 'githubEmail', body.githubEmail)
+  appendFeedbackFormField(formData, 'appVersion', body.appVersion)
+  appendFeedbackFormField(formData, 'platform', body.platform)
+  appendFeedbackFormField(formData, 'osRelease', body.osRelease)
+  appendFeedbackFormField(formData, 'arch', body.arch)
+  appendFeedbackFormField(
+    formData,
+    'diagnosticBundleSubmissionId',
+    body.diagnosticBundle.bundleSubmissionId
+  )
+  appendFeedbackFormField(formData, 'diagnosticBundleBytes', String(body.diagnosticBundle.bytes))
+  appendFeedbackFormField(
+    formData,
+    'diagnosticBundleSpanCount',
+    String(body.diagnosticBundle.spanCount)
+  )
+  formData.append(
+    'diagnosticBundleFile',
+    new Blob([body.diagnosticBundle.content], { type: DIAGNOSTIC_BUNDLE_CONTENT_TYPE }),
+    `orca-diagnostics-${body.diagnosticBundle.bundleSubmissionId}.ndjson`
+  )
+
+  // Why: multipart avoids JSON-escaping a near-cap NDJSON bundle over the
+  // backend request limit while still submitting one feedback request.
+  return { body: formData }
+}
+
+function appendFeedbackFormField(formData: FormData, key: string, value: string | null): void {
+  if (value !== null) {
+    formData.append(key, value)
   }
 }
 

@@ -1,5 +1,11 @@
 export type CrashReportDiagnosticBundle =
   | {
+      status: 'attached'
+      bundleSubmissionId: string
+      bytes: number
+      spanCount: number
+    }
+  | {
       status: 'uploaded'
       ticketId: string
       bundleSubmissionId: string
@@ -23,6 +29,15 @@ export function appendDiagnosticBundleLines(
     return
   }
   lines.push('', 'Diagnostic log:')
+  if (diagnosticBundle.status === 'attached') {
+    lines.push(
+      '- Status: attached',
+      `- Bundle submission ID: ${sanitizeString(diagnosticBundle.bundleSubmissionId)}`,
+      `- Spans: ${diagnosticBundle.spanCount}`,
+      `- Bytes: ${diagnosticBundle.bytes}`
+    )
+    return
+  }
   if (diagnosticBundle.status === 'uploaded') {
     lines.push(
       '- Status: uploaded',

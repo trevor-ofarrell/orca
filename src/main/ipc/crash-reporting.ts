@@ -19,16 +19,9 @@ import {
   getCrashBreadcrumbSnapshot,
   recordCrashBreadcrumb
 } from '../crash-reporting/crash-breadcrumb-store'
-import {
-  collectDiagnosticBundle,
-  deleteDiagnosticBundle,
-  getDiagnosticsStatus,
-  uploadDiagnosticBundle
-} from '../observability'
-import {
-  resolveDiagnosticOrcaChannel,
-  resolveDiagnosticTokenEndpoint
-} from '../observability/diagnostic-upload-endpoint'
+import { collectDiagnosticBundle, getDiagnosticsStatus } from '../observability'
+import { resolveDiagnosticOrcaChannel } from '../observability/diagnostic-upload-endpoint'
+import type { FeedbackDiagnosticBundleAttachment } from './feedback'
 
 const inFlightSubmissions = new Set<string>()
 const submittedReportIds = new Set<string>()
@@ -53,9 +46,9 @@ const REACT_ERROR_BOUNDARY_SURFACES = new Set<ReactErrorBoundaryReportArgs['surf
   'rich-markdown-editor'
 ])
 
-type CrashDiagnosticBundleUpload = {
+type CrashDiagnosticBundleAttachment = {
   readonly diagnosticBundle: CrashReportDiagnosticBundle
-  readonly tokenEndpoint?: string
+  readonly feedbackDiagnosticBundle?: FeedbackDiagnosticBundleAttachment
 }
 
 function stringField(value: unknown, maxLength: number): string | undefined {
@@ -309,7 +302,7 @@ function buildUncapturedCrashReportText(
   )
 }
 
-function skippedCrashDiagnosticBundle(): CrashDiagnosticBundleUpload {
+function skippedCrashDiagnosticBundle(): CrashDiagnosticBundleAttachment {
   return {
     diagnosticBundle: {
       status: 'not_uploaded',
@@ -318,7 +311,7 @@ function skippedCrashDiagnosticBundle(): CrashDiagnosticBundleUpload {
   }
 }
 
-async function collectAndUploadCrashDiagnosticBundle(): Promise<CrashDiagnosticBundleUpload> {
+function collectCrashDiagnosticBundleAttachment(): CrashDiagnosticBundleAttachment {
   const status = getDiagnosticsStatus()
   if (!status.bundleEnabled) {
     return {
@@ -345,68 +338,19 @@ async function collectAndUploadCrashDiagnosticBundle(): Promise<CrashDiagnosticB
     return { diagnosticBundle: { status: 'not_uploaded', reason: formatUnknownError(error) } }
   }
 
-  const tokenEndpoint = resolveDiagnosticTokenEndpoint()
-  if (!tokenEndpoint) {
-    return {
-      diagnosticBundle: {
-        status: 'not_uploaded',
-        reason: 'diagnostic upload endpoint is not configured for this build',
-        bundleSubmissionId: bundle.bundleSubmissionId,
-        bytes: bundle.bytes,
-        spanCount: bundle.spanCount
-      }
+  return {
+    diagnosticBundle: {
+      status: 'attached',
+      bundleSubmissionId: bundle.bundleSubmissionId,
+      bytes: bundle.bytes,
+      spanCount: bundle.spanCount
+    },
+    feedbackDiagnosticBundle: {
+      bundleSubmissionId: bundle.bundleSubmissionId,
+      content: bundle.payload,
+      bytes: bundle.bytes,
+      spanCount: bundle.spanCount
     }
-  }
-
-  try {
-    const result = await uploadDiagnosticBundle({
-      tokenEndpoint,
-      payload: bundle.payload,
-      bundleSubmissionId: bundle.bundleSubmissionId
-    })
-    return {
-      diagnosticBundle: {
-        status: 'uploaded',
-        ticketId: result.ticketId,
-        bundleSubmissionId: bundle.bundleSubmissionId,
-        bytes: bundle.bytes,
-        spanCount: bundle.spanCount
-      },
-      tokenEndpoint
-    }
-  } catch (error) {
-    return {
-      diagnosticBundle: {
-        status: 'not_uploaded',
-        reason: formatUnknownError(error),
-        bundleSubmissionId: bundle.bundleSubmissionId,
-        bytes: bundle.bytes,
-        spanCount: bundle.spanCount
-      }
-    }
-  }
-}
-
-async function deleteUploadedCrashDiagnosticBundle(
-  upload: CrashDiagnosticBundleUpload
-): Promise<boolean> {
-  if (upload.diagnosticBundle.status !== 'uploaded') {
-    return true
-  }
-  if (!upload.tokenEndpoint) {
-    return false
-  }
-  try {
-    await deleteDiagnosticBundle({
-      tokenEndpoint: upload.tokenEndpoint,
-      ticketId: upload.diagnosticBundle.ticketId
-    })
-    return true
-  } catch (error) {
-    // Why: if the feedback post fails after log upload, deleting the orphaned
-    // bundle preserves the user's expectation that one Send creates one report.
-    console.error('[crash-reporting] Failed to delete orphaned diagnostic bundle:', error)
-    return false
   }
 }
 
@@ -473,23 +417,23 @@ export function registerCrashReportingHandlers(store: CrashReportStore): void {
         const diagnosticUpload =
           args.includeDiagnosticLogs === false
             ? skippedCrashDiagnosticBundle()
-            : await collectAndUploadCrashDiagnosticBundle()
+            : collectCrashDiagnosticBundleAttachment()
         const diagnosticBundle = diagnosticUpload.diagnosticBundle
         const result = await submitFeedback({
           feedback: buildUncapturedCrashReportText(args.notes, diagnosticBundle),
           submissionType: 'crash',
           submitAnonymously: args.submitAnonymously,
           githubLogin: args.githubLogin,
-          githubEmail: args.githubEmail
+          githubEmail: args.githubEmail,
+          ...(diagnosticUpload.feedbackDiagnosticBundle
+            ? { diagnosticBundle: diagnosticUpload.feedbackDiagnosticBundle }
+            : {})
         })
         return result.ok
           ? { ok: true, report: null, diagnosticBundle }
           : {
               ...result,
-              report: null,
-              ...((await deleteUploadedCrashDiagnosticBundle(diagnosticUpload))
-                ? {}
-                : { diagnosticBundle })
+              report: null
             }
       }
       const canSubmitDismissedReport = Boolean(args.reportId && report.status === 'dismissed')
@@ -516,22 +460,22 @@ export function registerCrashReportingHandlers(store: CrashReportStore): void {
         const diagnosticUpload =
           args.includeDiagnosticLogs === false
             ? skippedCrashDiagnosticBundle()
-            : await collectAndUploadCrashDiagnosticBundle()
+            : collectCrashDiagnosticBundleAttachment()
         const diagnosticBundle = diagnosticUpload.diagnosticBundle
         const result = await submitFeedback({
           feedback: formatCrashReportText(report, args.notes, diagnosticBundle),
           submissionType: 'crash',
           submitAnonymously: args.submitAnonymously,
           githubLogin: args.githubLogin,
-          githubEmail: args.githubEmail
+          githubEmail: args.githubEmail,
+          ...(diagnosticUpload.feedbackDiagnosticBundle
+            ? { diagnosticBundle: diagnosticUpload.feedbackDiagnosticBundle }
+            : {})
         })
         if (!result.ok) {
           return {
             ...result,
-            report,
-            ...((await deleteUploadedCrashDiagnosticBundle(diagnosticUpload))
-              ? {}
-              : { diagnosticBundle })
+            report
           }
         }
         rememberSubmittedReportId(report.id)

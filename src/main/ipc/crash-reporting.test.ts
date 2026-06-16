@@ -7,25 +7,19 @@ const {
   listeners,
   clipboardWriteTextMock,
   collectDiagnosticBundleMock,
-  deleteDiagnosticBundleMock,
   getDiagnosticsStatusMock,
   recordCrashBreadcrumbMock,
   resolveDiagnosticOrcaChannelMock,
-  resolveDiagnosticTokenEndpointMock,
-  submitFeedbackMock,
-  uploadDiagnosticBundleMock
+  submitFeedbackMock
 } = vi.hoisted(() => ({
   handlers: new Map<string, (_event: unknown, args?: unknown) => unknown>(),
   listeners: new Map<string, (_event: unknown, args?: unknown) => void>(),
   clipboardWriteTextMock: vi.fn(),
   collectDiagnosticBundleMock: vi.fn(),
-  deleteDiagnosticBundleMock: vi.fn(),
   getDiagnosticsStatusMock: vi.fn(),
   recordCrashBreadcrumbMock: vi.fn(),
   resolveDiagnosticOrcaChannelMock: vi.fn(),
-  resolveDiagnosticTokenEndpointMock: vi.fn(),
-  submitFeedbackMock: vi.fn(),
-  uploadDiagnosticBundleMock: vi.fn()
+  submitFeedbackMock: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -54,14 +48,11 @@ vi.mock('../crash-reporting/crash-breadcrumb-store', () => ({
 
 vi.mock('../observability', () => ({
   collectDiagnosticBundle: collectDiagnosticBundleMock,
-  deleteDiagnosticBundle: deleteDiagnosticBundleMock,
-  getDiagnosticsStatus: getDiagnosticsStatusMock,
-  uploadDiagnosticBundle: uploadDiagnosticBundleMock
+  getDiagnosticsStatus: getDiagnosticsStatusMock
 }))
 
 vi.mock('../observability/diagnostic-upload-endpoint', () => ({
-  resolveDiagnosticOrcaChannel: resolveDiagnosticOrcaChannelMock,
-  resolveDiagnosticTokenEndpoint: resolveDiagnosticTokenEndpointMock
+  resolveDiagnosticOrcaChannel: resolveDiagnosticOrcaChannelMock
 }))
 
 import {
@@ -108,8 +99,6 @@ describe('registerCrashReportingHandlers', () => {
     clipboardWriteTextMock.mockReset()
     collectDiagnosticBundleMock.mockReset()
     collectDiagnosticBundleMock.mockReturnValue(diagnosticBundle())
-    deleteDiagnosticBundleMock.mockReset()
-    deleteDiagnosticBundleMock.mockResolvedValue(undefined)
     getDiagnosticsStatusMock.mockReset()
     getDiagnosticsStatusMock.mockReturnValue({
       localFileEnabled: true,
@@ -121,15 +110,9 @@ describe('registerCrashReportingHandlers', () => {
     })
     resolveDiagnosticOrcaChannelMock.mockReset()
     resolveDiagnosticOrcaChannelMock.mockReturnValue('stable')
-    resolveDiagnosticTokenEndpointMock.mockReset()
-    resolveDiagnosticTokenEndpointMock.mockReturnValue(
-      'https://diagnostics.example.com/diagnostics/token'
-    )
     submitFeedbackMock.mockReset()
     recordCrashBreadcrumbMock.mockReset()
     submitFeedbackMock.mockResolvedValue({ ok: true })
-    uploadDiagnosticBundleMock.mockReset()
-    uploadDiagnosticBundleMock.mockResolvedValue({ ticketId: 'ticketabcdefghijklmnop' })
     _resetRendererErrorReportDedupeForTests()
   })
 
@@ -224,29 +207,29 @@ describe('registerCrashReportingHandlers', () => {
       ok: true,
       report: sent,
       diagnosticBundle: {
-        status: 'uploaded',
-        ticketId: 'ticketabcdefghijklmnop',
+        status: 'attached',
         bundleSubmissionId: 'bundleabcdefghijklmnop',
         bytes: 25,
         spanCount: 1
       }
     })
     expect(submitFeedbackMock).toHaveBeenCalledWith({
-      feedback: expect.stringContaining('ticketabcdefghijklmnop'),
+      feedback: expect.stringContaining('Status: attached'),
       submissionType: 'crash',
       submitAnonymously: false,
       githubLogin: 'trusted-user',
-      githubEmail: null
-    })
-    expect(uploadDiagnosticBundleMock).toHaveBeenCalledWith({
-      tokenEndpoint: 'https://diagnostics.example.com/diagnostics/token',
-      payload: diagnosticBundle().payload,
-      bundleSubmissionId: diagnosticBundle().bundleSubmissionId
+      githubEmail: null,
+      diagnosticBundle: {
+        bundleSubmissionId: 'bundleabcdefghijklmnop',
+        content: diagnosticBundle().payload,
+        bytes: 25,
+        spanCount: 1
+      }
     })
     expect(markSent).toHaveBeenCalledWith(pending.id)
   })
 
-  it('submits an uncaptured Help menu crash report and uploads the diagnostic bundle', async () => {
+  it('submits an uncaptured Help menu crash report with an attached diagnostic bundle', async () => {
     const pending = report('pending', 'crash-late-pending')
     const markSent = vi.fn()
     const listRecent = vi.fn(async () => [pending])
@@ -271,8 +254,7 @@ describe('registerCrashReportingHandlers', () => {
       ok: true,
       report: null,
       diagnosticBundle: {
-        status: 'uploaded',
-        ticketId: 'ticketabcdefghijklmnop',
+        status: 'attached',
         bundleSubmissionId: 'bundleabcdefghijklmnop',
         bytes: 25,
         spanCount: 1
@@ -286,10 +268,16 @@ describe('registerCrashReportingHandlers', () => {
       submissionType: 'crash',
       submitAnonymously: false,
       githubLogin: 'trusted-user',
-      githubEmail: null
+      githubEmail: null,
+      diagnosticBundle: {
+        bundleSubmissionId: 'bundleabcdefghijklmnop',
+        content: diagnosticBundle().payload,
+        bytes: 25,
+        spanCount: 1
+      }
     })
     expect(submitFeedbackMock).toHaveBeenCalledWith(
-      expect.objectContaining({ feedback: expect.stringContaining('ticketabcdefghijklmnop') })
+      expect.objectContaining({ feedback: expect.stringContaining('Status: attached') })
     )
     expect(submitFeedbackMock).toHaveBeenCalledWith(
       expect.objectContaining({ feedback: expect.stringContaining('[redacted-path]') })
@@ -320,21 +308,21 @@ describe('registerCrashReportingHandlers', () => {
       ok: true,
       report: null,
       diagnosticBundle: {
-        status: 'uploaded',
-        ticketId: 'ticketabcdefghijklmnop',
+        status: 'attached',
         bundleSubmissionId: 'bundleabcdefghijklmnop',
         bytes: 25,
         spanCount: 1
       }
     })
-    expect(uploadDiagnosticBundleMock).toHaveBeenCalledWith({
-      tokenEndpoint: 'https://diagnostics.example.com/diagnostics/token',
-      payload: diagnosticBundle().payload,
-      bundleSubmissionId: diagnosticBundle().bundleSubmissionId
-    })
     expect(submitFeedbackMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        feedback: expect.stringContaining('ticketabcdefghijklmnop')
+        feedback: expect.stringContaining('Status: attached'),
+        diagnosticBundle: {
+          bundleSubmissionId: 'bundleabcdefghijklmnop',
+          content: diagnosticBundle().payload,
+          bytes: 25,
+          spanCount: 1
+        }
       })
     )
   })
@@ -367,7 +355,6 @@ describe('registerCrashReportingHandlers', () => {
       }
     })
     expect(collectDiagnosticBundleMock).not.toHaveBeenCalled()
-    expect(uploadDiagnosticBundleMock).not.toHaveBeenCalled()
     expect(submitFeedbackMock).toHaveBeenCalledWith(
       expect.objectContaining({
         feedback: expect.stringContaining('diagnostic log upload skipped by user')
@@ -375,8 +362,10 @@ describe('registerCrashReportingHandlers', () => {
     )
   })
 
-  it('still submits an uncaptured crash report when the diagnostic bundle cannot upload', async () => {
-    resolveDiagnosticTokenEndpointMock.mockReturnValue(null)
+  it('still submits an uncaptured crash report when the diagnostic bundle cannot be collected', async () => {
+    collectDiagnosticBundleMock.mockImplementation(() => {
+      throw new Error('collect failed')
+    })
     registerCrashReportingHandlers({
       getById: vi.fn(async () => null),
       dismiss: vi.fn(),
@@ -399,13 +388,9 @@ describe('registerCrashReportingHandlers', () => {
       report: null,
       diagnosticBundle: {
         status: 'not_uploaded',
-        reason: 'diagnostic upload endpoint is not configured for this build',
-        bundleSubmissionId: 'bundleabcdefghijklmnop',
-        bytes: 25,
-        spanCount: 1
+        reason: 'collect failed'
       }
     })
-    expect(uploadDiagnosticBundleMock).not.toHaveBeenCalled()
     expect(submitFeedbackMock).toHaveBeenCalledWith(
       expect.objectContaining({ feedback: expect.stringContaining('Status: not uploaded') })
     )
@@ -437,8 +422,7 @@ describe('registerCrashReportingHandlers', () => {
       ok: true,
       report: sent,
       diagnosticBundle: {
-        status: 'uploaded',
-        ticketId: 'ticketabcdefghijklmnop',
+        status: 'attached',
         bundleSubmissionId: 'bundleabcdefghijklmnop',
         bytes: 25,
         spanCount: 1
@@ -449,7 +433,13 @@ describe('registerCrashReportingHandlers', () => {
       submissionType: 'crash',
       submitAnonymously: true,
       githubLogin: null,
-      githubEmail: null
+      githubEmail: null,
+      diagnosticBundle: {
+        bundleSubmissionId: 'bundleabcdefghijklmnop',
+        content: diagnosticBundle().payload,
+        bytes: 25,
+        spanCount: 1
+      }
     })
     expect(markDismissedSent).toHaveBeenCalledWith(dismissed.id)
   })
@@ -508,55 +498,17 @@ describe('registerCrashReportingHandlers', () => {
       error: 'status 500',
       report: pending
     })
-    expect(deleteDiagnosticBundleMock).toHaveBeenCalledWith({
-      tokenEndpoint: 'https://diagnostics.example.com/diagnostics/token',
-      ticketId: 'ticketabcdefghijklmnop'
-    })
+    expect(submitFeedbackMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        diagnosticBundle: {
+          bundleSubmissionId: 'bundleabcdefghijklmnop',
+          content: diagnosticBundle().payload,
+          bytes: 25,
+          spanCount: 1
+        }
+      })
+    )
     expect(markSent).not.toHaveBeenCalled()
-  })
-
-  it('returns the uploaded diagnostic ticket if cleanup fails after feedback submission fails', async () => {
-    const pending = report('pending', 'crash-failed-cleanup')
-    submitFeedbackMock.mockResolvedValue({
-      ok: false,
-      status: 500,
-      error: 'status 500'
-    })
-    deleteDiagnosticBundleMock.mockRejectedValue(new Error('delete failed'))
-    registerCrashReportingHandlers({
-      getById: vi.fn(async () => pending),
-      dismiss: vi.fn(),
-      markSent: vi.fn(),
-      markDismissedSent: vi.fn(),
-      listRecent: vi.fn(async () => [pending]),
-      record: vi.fn(),
-      formatDiagnosticText: vi.fn()
-    } as never)
-
-    const result = await handlers.get('crashReports:submit')?.(null, {
-      reportId: pending.id,
-      submitAnonymously: true,
-      githubLogin: null,
-      githubEmail: null
-    })
-
-    expect(result).toEqual({
-      ok: false,
-      status: 500,
-      error: 'status 500',
-      report: pending,
-      diagnosticBundle: {
-        status: 'uploaded',
-        ticketId: 'ticketabcdefghijklmnop',
-        bundleSubmissionId: 'bundleabcdefghijklmnop',
-        bytes: 25,
-        spanCount: 1
-      }
-    })
-    expect(deleteDiagnosticBundleMock).toHaveBeenCalledWith({
-      tokenEndpoint: 'https://diagnostics.example.com/diagnostics/token',
-      ticketId: 'ticketabcdefghijklmnop'
-    })
   })
 
   it('bounds submitted report ids by evicting the oldest successful sends', async () => {

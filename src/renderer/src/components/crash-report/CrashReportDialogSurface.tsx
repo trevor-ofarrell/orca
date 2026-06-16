@@ -265,7 +265,10 @@ export function CrashReportDialogSurface({
                     'auto.components.crash.report.CrashReportDialog.765591798d',
                     'Checking for crash reports...'
                   )
-                : 'No automatic crash report was captured. You can still send details and include recent diagnostic logs when available.'}
+                : translate(
+                    'auto.components.crash.report.CrashReportDialog.ead6fc0510',
+                    'No automatic crash report was captured. You can still send details and include recent diagnostic logs when available.'
+                  )}
             </div>
           )}
           <textarea
@@ -285,10 +288,16 @@ export function CrashReportDialogSurface({
             />
             <div className="space-y-1">
               <Label htmlFor="crash-report-attach-diagnostics" className="text-xs">
-                Attach recent diagnostic logs
+                {translate(
+                  'auto.components.crash.report.CrashReportDialog.b082f27490',
+                  'Attach recent diagnostic logs'
+                )}
               </Label>
               <div className="text-xs leading-5 text-muted-foreground">
-                Sends a capped redacted log bundle with the report.
+                {translate(
+                  'auto.components.crash.report.CrashReportDialog.e59f0b9427',
+                  'Sends a capped redacted log bundle with the report.'
+                )}
               </div>
             </div>
           </div>

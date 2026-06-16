@@ -99,6 +99,46 @@ describe('submitFeedback', () => {
     })
   })
 
+  it('attaches diagnostic bundles only to crash submissions', async () => {
+    const diagnosticBundle = {
+      bundleSubmissionId: 'bundleabcdefghijklmnop',
+      content: '{"type":"bundle-header"}\n',
+      bytes: 25,
+      spanCount: 1
+    }
+    await submitFeedback({
+      feedback: '[Crash Report]',
+      submissionType: 'crash',
+      submitAnonymously: true,
+      githubLogin: null,
+      githubEmail: null,
+      diagnosticBundle
+    } as Parameters<typeof submitFeedback>[0])
+    await submitFeedback({
+      feedback: 'normal feedback',
+      submitAnonymously: true,
+      githubLogin: null,
+      githubEmail: null,
+      diagnosticBundle
+    } as Parameters<typeof submitFeedback>[0])
+
+    const crashInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
+    const feedbackInit = fetchMock.mock.calls[1]?.[1] as RequestInit | undefined
+    const crashFormData = crashInit?.body as FormData
+    expect(crashFormData).toBeInstanceOf(FormData)
+    expect(crashInit?.headers).toBeUndefined()
+    expect(crashFormData.get('submissionType')).toBe('crash')
+    expect(crashFormData.get('diagnosticBundleSubmissionId')).toBe(
+      diagnosticBundle.bundleSubmissionId
+    )
+    expect(crashFormData.get('diagnosticBundleBytes')).toBe(String(diagnosticBundle.bytes))
+    expect(crashFormData.get('diagnosticBundleSpanCount')).toBe(String(diagnosticBundle.spanCount))
+    const file = crashFormData.get('diagnosticBundleFile')
+    expect(file).toBeInstanceOf(Blob)
+    await expect((file as Blob).text()).resolves.toBe(diagnosticBundle.content)
+    expect(JSON.parse(String(feedbackInit?.body))).not.toHaveProperty('diagnosticBundle')
+  })
+
   it('falls back when the primary feedback request stalls', async () => {
     vi.useFakeTimers()
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
