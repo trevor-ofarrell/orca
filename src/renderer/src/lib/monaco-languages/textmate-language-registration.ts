@@ -22,6 +22,32 @@ function loadDefaultProviderModule(): Promise<TextMateTokenProviderModule> {
   return import('./textmate-token-provider')
 }
 
+export function registerTextMateTokensProvider(
+  monaco: MonacoModule,
+  languageId: string,
+  registration: Pick<
+    TextMateLanguageRegistration,
+    'scopeName' | 'loadGrammar' | 'loadProviderModule'
+  >
+): void {
+  let tokensProviderPromise: Promise<TextMateTokensProvider> | undefined
+  monaco.languages.registerTokensProviderFactory(languageId, {
+    create: () => {
+      // Why: plain Monaco tokenization requests basic language features; onLanguage
+      // only fires for rich features, so it never loads for read-only editors.
+      tokensProviderPromise ??= (
+        registration.loadProviderModule ?? loadDefaultProviderModule
+      )().then(({ createTextMateTokensProvider }) =>
+        createTextMateTokensProvider({
+          scopeName: registration.scopeName,
+          loadGrammar: registration.loadGrammar
+        })
+      )
+      return tokensProviderPromise
+    }
+  })
+}
+
 export function registerTextMateLanguage(
   monaco: MonacoModule,
   registration: TextMateLanguageRegistration
@@ -38,20 +64,5 @@ export function registerTextMateLanguage(
     monaco.languages.setLanguageConfiguration(registration.language.id, registration.configuration)
   }
 
-  let tokensProviderPromise: Promise<TextMateTokensProvider> | undefined
-  monaco.languages.registerTokensProviderFactory(registration.language.id, {
-    create: () => {
-      // Why: plain Monaco tokenization requests basic language features; onLanguage
-      // only fires for rich features, so it never loads for a read-only Nim editor.
-      tokensProviderPromise ??= (
-        registration.loadProviderModule ?? loadDefaultProviderModule
-      )().then(({ createTextMateTokensProvider }) =>
-        createTextMateTokensProvider({
-          scopeName: registration.scopeName,
-          loadGrammar: registration.loadGrammar
-        })
-      )
-      return tokensProviderPromise
-    }
-  })
+  registerTextMateTokensProvider(monaco, registration.language.id, registration)
 }

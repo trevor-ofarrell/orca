@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { registerTextMateLanguage } from './textmate-language-registration'
+import {
+  registerTextMateLanguage,
+  registerTextMateTokensProvider
+} from './textmate-language-registration'
 
 function createMonacoMock(registeredLanguages: { id: string }[] = []) {
   let tokensProviderFactory: { create: () => unknown } | undefined
@@ -87,5 +90,36 @@ describe('registerTextMateLanguage', () => {
 
     expect(monaco.languages.register).not.toHaveBeenCalled()
     expect(monaco.languages.registerTokensProviderFactory).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerTextMateTokensProvider', () => {
+  it('lazily installs TextMate tokens for existing language ids', async () => {
+    const { monaco, createTokensProvider } = createMonacoMock([{ id: 'typescript' }])
+    const provider = {
+      getInitialState: vi.fn(),
+      tokenize: vi.fn()
+    }
+    const createTextMateTokensProvider = vi.fn(async () => provider)
+    const loadProviderModule = vi.fn(async () => ({ createTextMateTokensProvider }))
+    const loadGrammar = vi.fn()
+
+    registerTextMateTokensProvider(monaco as never, 'typescript', {
+      scopeName: 'source.tsx',
+      loadGrammar,
+      loadProviderModule
+    })
+
+    expect(monaco.languages.register).not.toHaveBeenCalled()
+    expect(monaco.languages.registerTokensProviderFactory).toHaveBeenCalledWith(
+      'typescript',
+      expect.objectContaining({ create: expect.any(Function) })
+    )
+
+    await expect(createTokensProvider()).resolves.toBe(provider)
+    expect(createTextMateTokensProvider).toHaveBeenCalledWith({
+      scopeName: 'source.tsx',
+      loadGrammar
+    })
   })
 })
