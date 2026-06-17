@@ -34,14 +34,22 @@ import { useTerminalKeyboardShortcuts, type SearchState } from './keyboard-handl
 import type { MacOptionAsAlt } from './terminal-shortcut-policy'
 import { useEffectiveMacOptionAsAlt } from '@/lib/keyboard-layout/use-effective-mac-option-as-alt'
 import { useTerminalFontZoom } from './useTerminalFontZoom'
-import CloseTerminalDialog from './CloseTerminalDialog'
+import CloseTerminalDialog, { type CloseTerminalDialogCopyKind } from './CloseTerminalDialog'
 import { MobileDriverOverlay } from './MobileDriverOverlay'
 import { TerminalErrorToast } from './TerminalErrorToast'
 import { TerminalSessionStateSaveFailureDialog } from './TerminalSessionStateSaveFailureDialog'
 import TerminalContextMenu from './TerminalContextMenu'
 import { TerminalAgentSessionForkDialog } from './TerminalAgentSessionForkDialog'
-import { SessionRestoredBanner } from './SessionRestoredBanner'
+import { SessionRestoredBannerPortals } from './SessionRestoredBannerPortals'
 import { useSessionRestoredBannerDismiss } from './useSessionRestoredBannerDismiss'
+import {
+  addSessionRestoredBannerPaneId,
+  dismissSessionRestoredBannerPaneIds,
+  pruneSessionRestoredBannerPaneIds,
+  removeSessionRestoredBannerPaneId,
+  syncSessionRestoredBannerTitleSpace,
+  type SessionRestoredBannerDismissEvent
+} from './session-restored-banner-pane-state'
 import { useSystemPrefersDark } from './use-system-prefers-dark'
 import { useTerminalPaneGlobalEffects } from './use-terminal-pane-global-effects'
 import { useTerminalPaneLifecycle } from './use-terminal-pane-lifecycle'
@@ -216,7 +224,10 @@ export default function TerminalPane({
   const searchOpenRef = useRef(false)
   searchOpenRef.current = searchOpen
   const searchStateRef = useRef<SearchState>({ query: '', caseSensitive: false, regex: false })
-  const [closeConfirmPaneId, setCloseConfirmPaneId] = useState<number | null>(null)
+  const [pendingCloseConfirmation, setPendingCloseConfirmation] = useState<{
+    paneId: number
+    copyKind: CloseTerminalDialogCopyKind
+  } | null>(null)
   const [quickCommandEditorOpen, setQuickCommandEditorOpen] = useState(false)
   // Why: the terminal menu can be the first quick-command entry point, so each
   // Add action starts with a fresh draft instead of reusing cancelled text.
@@ -415,8 +426,8 @@ export default function TerminalPane({
   // xterm may not know multi-line text needs bracketed-paste protection.
   const forceBracketedMultilineTextPaste = isWindowsUserAgent()
   const [startup] = useState(() => useAppStore.getState().pendingStartupByTabId[tabId])
-  const [showSessionRestoredBanner, setShowSessionRestoredBanner] = useState(
-    () => startup?.showSessionRestoredBanner === true
+  const [sessionRestoredBannerPaneIds, setSessionRestoredBannerPaneIds] = useState<Set<number>>(
+    () => new Set()
   )
   const shouldMeasureHiddenStartup = startup !== undefined && !isVisible
   const consumeTabStartupCommand = useAppStore((store) => store.consumeTabStartupCommand)
@@ -432,11 +443,30 @@ export default function TerminalPane({
     }
   }, [startup, tabId, consumeTabStartupCommand])
 
-  const dismissSessionRestoredBanner = useCallback((): void => {
-    setShowSessionRestoredBanner(false)
+  const clearSessionRestoredBannerForPane = useCallback((paneId: number): void => {
+    setSessionRestoredBannerPaneIds((prev) => {
+      const next = removeSessionRestoredBannerPaneId(prev, paneId)
+      return next === prev ? prev : next
+    })
   }, [])
+
+  const showRestoredSessionBanner = useCallback((paneId: number): void => {
+    setSessionRestoredBannerPaneIds((prev) => {
+      const next = addSessionRestoredBannerPaneId(prev, paneId)
+      return next === prev ? prev : next
+    })
+  }, [])
+
+  const dismissSessionRestoredBanner = useCallback(
+    (event: SessionRestoredBannerDismissEvent): void => {
+      setSessionRestoredBannerPaneIds((prev) =>
+        dismissSessionRestoredBannerPaneIds(prev, event, managerRef.current?.getPanes() ?? [])
+      )
+    },
+    []
+  )
   useSessionRestoredBannerDismiss(
-    showSessionRestoredBanner,
+    sessionRestoredBannerPaneIds.size > 0,
     containerRef,
     dismissSessionRestoredBanner
   )
@@ -766,6 +796,7 @@ export default function TerminalPane({
         // a single split pane doesn't go through closeTab.
         const ptyId = paneTransportsRef.current.get(paneId)?.getPtyId() ?? null
         closeWebRuntimeTerminal(ptyId)
+        clearSessionRestoredBannerForPane(paneId)
         const leafId = manager.getLeafId(paneId)
         if (leafId) {
           useAppStore.getState().setCacheTimerStartedAt(makePaneKey(tabId, leafId), null)
@@ -775,13 +806,26 @@ export default function TerminalPane({
         manager.closePane(paneId)
       }
     },
-    [onCloseTab, syncPanePtyLayoutBinding, tabId]
+    [clearSessionRestoredBannerForPane, onCloseTab, syncPanePtyLayoutBinding, tabId]
   )
 
   // Cmd+W handler — shows a confirmation dialog when the pane's shell has
   // a running child process (e.g. npm run dev), so the user doesn't
   // accidentally kill it. An idle shell prompt closes immediately. Ctrl+D
   // (explicit EOF) bypasses this by design.
+  const getCloseDialogCopyKind = useCallback(
+    (paneId: number): CloseTerminalDialogCopyKind => {
+      const leafId = managerRef.current?.getLeafId(paneId)
+      if (!leafId) {
+        return 'command'
+      }
+      const agentType =
+        useAppStore.getState().agentStatusByPaneKey[makePaneKey(tabId, leafId)]?.agentType
+      return agentType && agentType !== 'unknown' ? 'agent' : 'command'
+    },
+    [tabId]
+  )
+
   const handleRequestClosePane = useCallback(
     (paneId: number) => {
       const transport = paneTransportsRef.current.get(paneId)
@@ -793,10 +837,10 @@ export default function TerminalPane({
       const settings = useAppStore.getState().settings
       void inspectRuntimeTerminalProcess(settings, ptyId)
         .then((process) => {
-          if (process.hasChildProcesses) {
-            setCloseConfirmPaneId(paneId)
-          } else {
+          if (!process.hasChildProcesses || settings?.skipCloseTerminalWithRunningProcessConfirm) {
             executeClosePane(paneId)
+          } else {
+            setPendingCloseConfirmation({ paneId, copyKind: getCloseDialogCopyKind(paneId) })
           }
         })
         // Why: if the child-process probe rejects (IPC wedged, handler
@@ -805,7 +849,7 @@ export default function TerminalPane({
         // had a child process. Matches the semantics of the !ptyId branch above.
         .catch(() => executeClosePane(paneId))
     },
-    [executeClosePane]
+    [executeClosePane, getCloseDialogCopyKind]
   )
 
   const handleSearchSelectedText = useCallback((selectedText: string): void => {
@@ -813,13 +857,24 @@ export default function TerminalPane({
     state.showRightSidebarSearch({ query: selectedText })
   }, [])
 
-  const handleConfirmClose = useCallback(() => {
-    if (closeConfirmPaneId === null) {
-      return
-    }
-    executeClosePane(closeConfirmPaneId)
-    setCloseConfirmPaneId(null)
-  }, [closeConfirmPaneId, executeClosePane])
+  const handleConfirmClose = useCallback(
+    (dontAskAgain: boolean) => {
+      if (pendingCloseConfirmation === null) {
+        return
+      }
+      const paneId = pendingCloseConfirmation.paneId
+      setPendingCloseConfirmation(null)
+      if (dontAskAgain) {
+        void updateSettings({ skipCloseTerminalWithRunningProcessConfirm: true })
+      }
+      executeClosePane(paneId)
+    },
+    [executeClosePane, pendingCloseConfirmation, updateSettings]
+  )
+
+  const handleCancelClose = useCallback(() => {
+    setPendingCloseConfirmation(null)
+  }, [])
 
   useTerminalPaneLifecycle({
     tabId,
@@ -863,6 +918,7 @@ export default function TerminalPane({
     clearWorktreeUnread,
     clearTerminalTabUnread,
     clearTerminalPaneUnread,
+    onShowSessionRestoredBanner: showRestoredSessionBanner,
     dispatchNotification,
     setCacheTimerStartedAt,
     syncPanePtyLayoutBinding,
@@ -1071,6 +1127,7 @@ export default function TerminalPane({
         clearWorktreeUnread,
         clearTerminalTabUnread,
         clearTerminalPaneUnread,
+        onShowSessionRestoredBanner: showRestoredSessionBanner,
         dispatchNotification,
         setCacheTimerStartedAt,
         syncPanePtyLayoutBinding
@@ -1090,6 +1147,7 @@ export default function TerminalPane({
       clearWorktreeUnread,
       clearTerminalTabUnread,
       clearTerminalPaneUnread,
+      showRestoredSessionBanner,
       onPtyExitRef,
       setCacheTimerStartedAt,
       setRuntimePaneTitle,
@@ -1479,29 +1537,30 @@ export default function TerminalPane({
     if (!manager) {
       return
     }
-    let needsFit = false
-    for (const pane of manager.getPanes()) {
-      // Show the title bar space when the pane has a title, is being
-      // inline-edited, or has transient startup chrome.
-      // Unread activity does NOT reserve title-bar space — the bell is
-      // rendered as an absolutely-positioned overlay in the pane's top-right
-      // corner so it can appear and disappear without shifting terminal
-      // content, avoiding the jarring reflow on bell toggles.
-      const shouldShow =
-        !!paneTitles[pane.id] || renamingPaneId === pane.id || showSessionRestoredBanner
-      const hadTitle = pane.container.hasAttribute('data-has-title')
-      if (shouldShow && !hadTitle) {
-        pane.container.setAttribute('data-has-title', '')
-        needsFit = true
-      } else if (!shouldShow && hadTitle) {
-        pane.container.removeAttribute('data-has-title')
-        needsFit = true
-      }
-    }
+    // Show the title bar space when the pane has a title, is being
+    // inline-edited, or has transient startup chrome. Unread activity does
+    // not reserve this space; its overlay should not reflow terminal content.
+    const needsFit = syncSessionRestoredBannerTitleSpace({
+      panes: manager.getPanes(),
+      paneTitles,
+      renamingPaneId,
+      sessionRestoredBannerPaneIds
+    })
     if (needsFit) {
       fitPanes(manager)
     }
-  }, [paneCount, paneTitles, renamingPaneId, showSessionRestoredBanner])
+  }, [paneCount, paneTitles, renamingPaneId, sessionRestoredBannerPaneIds])
+
+  useEffect(() => {
+    const manager = managerRef.current
+    if (!manager) {
+      return
+    }
+    setSessionRestoredBannerPaneIds((prev) => {
+      const next = pruneSessionRestoredBannerPaneIds(prev, manager.getPanes())
+      return next === prev ? prev : next
+    })
+  }, [paneCount])
 
   // Register a capture callback for shutdown. The beforeunload handler in
   // App.tsx calls all registered callbacks to serialize terminal buffers.
@@ -1982,15 +2041,10 @@ export default function TerminalPane({
           />,
           activePane.container
         )}
-      {showSessionRestoredBanner &&
-        activePane?.container &&
-        createPortal(
-          // Why: resumed Codex TUIs repaint xterm immediately, so the wake marker
-          // must live in the pane chrome instead of the PTY byte stream.
-          <SessionRestoredBanner visible />,
-          activePane.container,
-          'session-restored-banner'
-        )}
+      <SessionRestoredBannerPortals
+        panes={managerRef.current?.getPanes() ?? []}
+        paneIds={sessionRestoredBannerPaneIds}
+      />
       <TerminalContextMenu
         open={contextMenu.open}
         onOpenChange={contextMenu.setOpen}
@@ -2165,8 +2219,9 @@ export default function TerminalPane({
         )
       })}
       <CloseTerminalDialog
-        open={closeConfirmPaneId !== null}
-        onCancel={() => setCloseConfirmPaneId(null)}
+        open={pendingCloseConfirmation !== null}
+        copyKind={pendingCloseConfirmation?.copyKind}
+        onCancel={handleCancelClose}
         onConfirm={handleConfirmClose}
       />
     </>
