@@ -71,6 +71,7 @@ describe('registerTextMateLanguage', () => {
 
     await expect(providerPromise).resolves.toBe(provider)
     expect(createTextMateTokensProvider).toHaveBeenCalledWith({
+      getInjections: undefined,
       scopeName: 'source.nim',
       loadGrammar
     })
@@ -118,6 +119,33 @@ describe('registerTextMateTokensProvider', () => {
 
     await expect(createTokensProvider()).resolves.toBe(provider)
     expect(createTextMateTokensProvider).toHaveBeenCalledWith({
+      getInjections: undefined,
+      scopeName: 'source.tsx',
+      loadGrammar
+    })
+  })
+
+  it('resolves lazy TextMate root scopes before creating the provider', async () => {
+    const { monaco, createTokensProvider } = createMonacoMock([{ id: 'typescript' }])
+    const provider = {
+      getInitialState: vi.fn(),
+      tokenize: vi.fn()
+    }
+    const createTextMateTokensProvider = vi.fn(async () => provider)
+    const loadProviderModule = vi.fn(async () => ({ createTextMateTokensProvider }))
+    const loadGrammar = vi.fn()
+    const scopeName = vi.fn(async () => 'source.tsx')
+
+    registerTextMateTokensProvider(monaco as never, 'typescript', {
+      scopeName,
+      loadGrammar,
+      loadProviderModule
+    })
+
+    await expect(createTokensProvider()).resolves.toBe(provider)
+    expect(scopeName).toHaveBeenCalledTimes(1)
+    expect(createTextMateTokensProvider).toHaveBeenCalledWith({
+      getInjections: undefined,
       scopeName: 'source.tsx',
       loadGrammar
     })

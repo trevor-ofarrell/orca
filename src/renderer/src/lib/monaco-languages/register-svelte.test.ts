@@ -119,7 +119,7 @@ function collectFixtureRuleActions(source: string): string[] {
 }
 
 describe('registerSvelteLanguage registration', () => {
-  it('registers the svelte language, Monarch tokenizer, and configuration once', () => {
+  it('registers the svelte language metadata and configuration without a tokenizer override', () => {
     const languages: { id: string }[] = [{ id: 'typescript' }]
     const register = vi.fn((entry: { id: string }) => {
       languages.push({ id: entry.id })
@@ -145,9 +145,8 @@ describe('registerSvelteLanguage registration', () => {
       extensions: ['.svelte'],
       aliases: ['Svelte']
     })
-    expect(setMonarchTokensProvider).toHaveBeenCalledTimes(1)
-    expect(setMonarchTokensProvider).toHaveBeenCalledWith('svelte', svelteMonarchLanguage)
-    expect(setLanguageConfiguration).toHaveBeenCalledTimes(1)
+    expect(setMonarchTokensProvider).not.toHaveBeenCalled()
+    expect(setLanguageConfiguration).toHaveBeenCalledTimes(2)
     expect(setLanguageConfiguration).toHaveBeenCalledWith('svelte', svelteLanguageConfiguration)
   })
 })

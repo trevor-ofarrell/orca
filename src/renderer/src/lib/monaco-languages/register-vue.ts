@@ -152,15 +152,13 @@ export function registerVueLanguage(monaco: MonacoModule): void {
   const vueAlreadyRegistered = monaco.languages
     .getLanguages()
     .some((language) => language.id === 'vue')
-  if (vueAlreadyRegistered) {
-    return
+  if (!vueAlreadyRegistered) {
+    monaco.languages.register({
+      id: 'vue',
+      extensions: ['.vue'],
+      aliases: ['Vue']
+    })
   }
 
-  monaco.languages.register({
-    id: 'vue',
-    extensions: ['.vue'],
-    aliases: ['Vue']
-  })
-  monaco.languages.setMonarchTokensProvider('vue', vueMonarchLanguage)
   monaco.languages.setLanguageConfiguration('vue', vueLanguageConfiguration)
 }

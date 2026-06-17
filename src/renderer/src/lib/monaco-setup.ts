@@ -73,11 +73,11 @@ monacoTS.javascriptDefaults.setCompilerOptions({
 })
 
 registerOrcaMonacoTheme(monaco)
-registerTextMateGrammarRegistry(monaco)
 registerVueLanguage(monaco)
 registerSvelteLanguage(monaco)
 registerAstroLanguage(monaco)
 registerNimLanguage(monaco)
+registerTextMateGrammarRegistry(monaco)
 installMonacoDiffEditorDisposalGuard(monaco)
 
 // Configure Monaco to use the locally bundled editor instead of CDN

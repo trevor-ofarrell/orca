@@ -225,15 +225,13 @@ export function registerSvelteLanguage(monaco: MonacoModule): void {
   const svelteAlreadyRegistered = monaco.languages
     .getLanguages()
     .some((language) => language.id === 'svelte')
-  if (svelteAlreadyRegistered) {
-    return
+  if (!svelteAlreadyRegistered) {
+    monaco.languages.register({
+      id: 'svelte',
+      extensions: ['.svelte'],
+      aliases: ['Svelte']
+    })
   }
 
-  monaco.languages.register({
-    id: 'svelte',
-    extensions: ['.svelte'],
-    aliases: ['Svelte']
-  })
-  monaco.languages.setMonarchTokensProvider('svelte', svelteMonarchLanguage)
   monaco.languages.setLanguageConfiguration('svelte', svelteLanguageConfiguration)
 }

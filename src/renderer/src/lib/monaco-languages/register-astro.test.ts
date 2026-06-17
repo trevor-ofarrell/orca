@@ -107,7 +107,7 @@ function collectFixtureRuleActions(source: string): string[] {
 }
 
 describe('registerAstroLanguage registration', () => {
-  it('registers the astro language, Monarch tokenizer, and configuration once', () => {
+  it('registers the astro language metadata and configuration without a tokenizer override', () => {
     const languages: { id: string }[] = [{ id: 'typescript' }]
     const register = vi.fn((entry: { id: string }) => {
       languages.push({ id: entry.id })
@@ -133,9 +133,8 @@ describe('registerAstroLanguage registration', () => {
       extensions: ['.astro'],
       aliases: ['Astro']
     })
-    expect(setMonarchTokensProvider).toHaveBeenCalledTimes(1)
-    expect(setMonarchTokensProvider).toHaveBeenCalledWith('astro', astroMonarchLanguage)
-    expect(setLanguageConfiguration).toHaveBeenCalledTimes(1)
+    expect(setMonarchTokensProvider).not.toHaveBeenCalled()
+    expect(setLanguageConfiguration).toHaveBeenCalledTimes(2)
     expect(setLanguageConfiguration).toHaveBeenCalledWith('astro', astroLanguageConfiguration)
   })
 })

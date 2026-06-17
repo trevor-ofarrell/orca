@@ -9,12 +9,15 @@ type TextMateTokensProvider = Monaco.languages.TokensProvider
 type TextMateTokenProviderModule = {
   createTextMateTokensProvider: typeof createTextMateTokensProviderType
 }
+export type TextMateScopeNameResolver = string | (() => Promise<string>)
+export type TextMateGrammarInjectionsProvider = (scopeName: string) => string[] | undefined
 
 export type TextMateLanguageRegistration = {
   language: Monaco.languages.ILanguageExtensionPoint
   configuration?: Monaco.languages.LanguageConfiguration
-  scopeName: string
+  scopeName: TextMateScopeNameResolver
   loadGrammar: TextMateGrammarLoader
+  getInjections?: TextMateGrammarInjectionsProvider
   loadProviderModule?: () => Promise<TextMateTokenProviderModule>
 }
 
@@ -27,7 +30,7 @@ export function registerTextMateTokensProvider(
   languageId: string,
   registration: Pick<
     TextMateLanguageRegistration,
-    'scopeName' | 'loadGrammar' | 'loadProviderModule'
+    'scopeName' | 'loadGrammar' | 'getInjections' | 'loadProviderModule'
   >
 ): void {
   let tokensProviderPromise: Promise<TextMateTokensProvider> | undefined
@@ -37,12 +40,18 @@ export function registerTextMateTokensProvider(
       // only fires for rich features, so it never loads for read-only editors.
       tokensProviderPromise ??= (
         registration.loadProviderModule ?? loadDefaultProviderModule
-      )().then(({ createTextMateTokensProvider }) =>
-        createTextMateTokensProvider({
-          scopeName: registration.scopeName,
+      )().then(async ({ createTextMateTokensProvider }) => {
+        const scopeName =
+          typeof registration.scopeName === 'function'
+            ? await registration.scopeName()
+            : registration.scopeName
+
+        return createTextMateTokensProvider({
+          getInjections: registration.getInjections,
+          scopeName,
           loadGrammar: registration.loadGrammar
         })
-      )
+      })
       return tokensProviderPromise
     }
   })

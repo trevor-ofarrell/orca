@@ -175,15 +175,13 @@ export function registerAstroLanguage(monaco: MonacoModule): void {
   const astroAlreadyRegistered = monaco.languages
     .getLanguages()
     .some((language) => language.id === 'astro')
-  if (astroAlreadyRegistered) {
-    return
+  if (!astroAlreadyRegistered) {
+    monaco.languages.register({
+      id: 'astro',
+      extensions: ['.astro'],
+      aliases: ['Astro']
+    })
   }
 
-  monaco.languages.register({
-    id: 'astro',
-    extensions: ['.astro'],
-    aliases: ['Astro']
-  })
-  monaco.languages.setMonarchTokensProvider('astro', astroMonarchLanguage)
   monaco.languages.setLanguageConfiguration('astro', astroLanguageConfiguration)
 }
