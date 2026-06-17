@@ -1,13 +1,14 @@
+/* eslint-disable max-lines -- Why: explicit Shiki loader and Orca language maps avoid importing Shiki's full language catalogue. */
 import type * as Monaco from 'monaco-editor'
-import { bundledLanguages, bundledLanguagesInfo } from 'shiki/langs'
-import type { LanguageRegistration } from 'shiki/types'
+import type { LanguageRegistration } from '@shikijs/types'
 import type { IRawGrammar } from 'vscode-textmate'
 import { registerTextMateTokensProvider } from './textmate-language-registration'
 import type { TextMateGrammarLoader } from './textmate-token-provider'
 
 type MonacoModule = typeof Monaco
 type ShikiLanguageModule = { default: LanguageRegistration | LanguageRegistration[] }
-type ShikiLanguageLoader = () => Promise<ShikiLanguageModule>
+export type ShikiLanguageLoader = () => Promise<ShikiLanguageModule>
+export type ShikiLanguageLoaderMap = Record<string, ShikiLanguageLoader | undefined>
 type LoadedShikiLanguage = {
   rootScopeName: string
   grammarsByScope: Map<string, IRawGrammar>
@@ -30,8 +31,73 @@ export type TextMateGrammarRegistration = {
   source: string
 }
 
-const shikiLanguageLoaders = bundledLanguages as Record<string, ShikiLanguageLoader | undefined>
-const shikiLanguageIds = new Set(Object.keys(shikiLanguageLoaders))
+export type ShikiLanguageResolver = {
+  hasLanguage: (shikiLanguageId: string) => boolean
+  loadLanguage: (shikiLanguageId: string) => Promise<LanguageRegistration[]>
+}
+
+export const SHIKI_LANGUAGE_LOADERS = {
+  tsx: () => import('@shikijs/langs/tsx'),
+  jsx: () => import('@shikijs/langs/jsx'),
+  typescript: () => import('@shikijs/langs/typescript'),
+  javascript: () => import('@shikijs/langs/javascript'),
+  jsonc: () => import('@shikijs/langs/jsonc'),
+  json: () => import('@shikijs/langs/json'),
+  markdown: () => import('@shikijs/langs/markdown'),
+  mermaid: () => import('@shikijs/langs/mermaid'),
+  css: () => import('@shikijs/langs/css'),
+  scss: () => import('@shikijs/langs/scss'),
+  sass: () => import('@shikijs/langs/sass'),
+  less: () => import('@shikijs/langs/less'),
+  stylus: () => import('@shikijs/langs/stylus'),
+  postcss: () => import('@shikijs/langs/postcss'),
+  html: () => import('@shikijs/langs/html'),
+  'html-derivative': () => import('@shikijs/langs/html-derivative'),
+  xml: () => import('@shikijs/langs/xml'),
+  python: () => import('@shikijs/langs/python'),
+  rust: () => import('@shikijs/langs/rust'),
+  go: () => import('@shikijs/langs/go'),
+  java: () => import('@shikijs/langs/java'),
+  kotlin: () => import('@shikijs/langs/kotlin'),
+  c: () => import('@shikijs/langs/c'),
+  cpp: () => import('@shikijs/langs/cpp'),
+  csharp: () => import('@shikijs/langs/csharp'),
+  ruby: () => import('@shikijs/langs/ruby'),
+  php: () => import('@shikijs/langs/php'),
+  swift: () => import('@shikijs/langs/swift'),
+  shellscript: () => import('@shikijs/langs/shellscript'),
+  bat: () => import('@shikijs/langs/bat'),
+  powershell: () => import('@shikijs/langs/powershell'),
+  yaml: () => import('@shikijs/langs/yaml'),
+  ini: () => import('@shikijs/langs/ini'),
+  toml: () => import('@shikijs/langs/toml'),
+  sql: () => import('@shikijs/langs/sql'),
+  graphql: () => import('@shikijs/langs/graphql'),
+  docker: () => import('@shikijs/langs/docker'),
+  proto: () => import('@shikijs/langs/proto'),
+  lua: () => import('@shikijs/langs/lua'),
+  r: () => import('@shikijs/langs/r'),
+  scala: () => import('@shikijs/langs/scala'),
+  dart: () => import('@shikijs/langs/dart'),
+  elixir: () => import('@shikijs/langs/elixir'),
+  erlang: () => import('@shikijs/langs/erlang'),
+  haskell: () => import('@shikijs/langs/haskell'),
+  clojure: () => import('@shikijs/langs/clojure'),
+  vue: () => import('@shikijs/langs/vue'),
+  svelte: () => import('@shikijs/langs/svelte'),
+  astro: () => import('@shikijs/langs/astro'),
+  'system-verilog': () => import('@shikijs/langs/system-verilog'),
+  verilog: () => import('@shikijs/langs/verilog'),
+  nim: () => import('@shikijs/langs/nim'),
+  terraform: () => import('@shikijs/langs/terraform'),
+  csv: () => import('@shikijs/langs/csv'),
+  tsv: () => import('@shikijs/langs/tsv'),
+  make: () => import('@shikijs/langs/make'),
+  cmake: () => import('@shikijs/langs/cmake'),
+  coffee: () => import('@shikijs/langs/coffee'),
+  json5: () => import('@shikijs/langs/json5'),
+  pug: () => import('@shikijs/langs/pug')
+} satisfies ShikiLanguageLoaderMap
 
 export const ORCA_SHIKI_LANGUAGE_REGISTRY: readonly OrcaShikiLanguageRegistration[] = [
   { monacoLanguageId: 'typescript', shikiLanguageId: 'tsx' },
@@ -162,8 +228,58 @@ export function normalizeLanguageRegistrations(value: unknown): LanguageRegistra
   return registrations.filter(isLanguageRegistration)
 }
 
+export function createShikiLanguageResolver(
+  loaders: ShikiLanguageLoaderMap
+): ShikiLanguageResolver {
+  const loadedLanguages = new Map<string, Promise<LanguageRegistration[]>>()
+  const hasLanguage = (shikiLanguageId: string): boolean => Boolean(loaders[shikiLanguageId])
+
+  async function loadLanguage(
+    shikiLanguageId: string,
+    seen = new Set<string>()
+  ): Promise<LanguageRegistration[]> {
+    if (seen.has(shikiLanguageId)) {
+      return []
+    }
+
+    const loadLanguageModule = loaders[shikiLanguageId]
+    if (!loadLanguageModule) {
+      return []
+    }
+
+    const cachedLanguage = loadedLanguages.get(shikiLanguageId)
+    if (cachedLanguage) {
+      return cachedLanguage
+    }
+
+    const loadedLanguage = (async () => {
+      const registrations = normalizeLanguageRegistrations(await loadLanguageModule())
+      const nextSeen = new Set(seen)
+      nextSeen.add(shikiLanguageId)
+      const embeddedLanguageIds = Array.from(
+        new Set(registrations.flatMap((registration) => registration.embeddedLangsLazy ?? []))
+      )
+      const embeddedRegistrations = (
+        await Promise.all(
+          embeddedLanguageIds.map((embeddedLanguageId) =>
+            loadLanguage(embeddedLanguageId, nextSeen)
+          )
+        )
+      ).flat()
+
+      return [...embeddedRegistrations, ...registrations]
+    })()
+    loadedLanguages.set(shikiLanguageId, loadedLanguage)
+    return loadedLanguage
+  }
+
+  return { hasLanguage, loadLanguage }
+}
+
+const defaultShikiLanguageResolver = createShikiLanguageResolver(SHIKI_LANGUAGE_LOADERS)
+
 export function hasShikiLanguage(shikiLanguageId: string): boolean {
-  return shikiLanguageIds.has(shikiLanguageId)
+  return defaultShikiLanguageResolver.hasLanguage(shikiLanguageId)
 }
 
 export function getMissingShikiLanguageMappings(): string[] {
@@ -194,20 +310,19 @@ function createLoadedShikiLanguage(registrations: LanguageRegistration[]): Loade
 }
 
 export function createShikiTextMateGrammarRegistration(
-  registration: OrcaShikiLanguageRegistration
+  registration: OrcaShikiLanguageRegistration,
+  resolver: ShikiLanguageResolver = defaultShikiLanguageResolver
 ): TextMateGrammarRegistration | null {
-  const loadShikiLanguage = shikiLanguageLoaders[registration.shikiLanguageId]
-  if (!loadShikiLanguage) {
+  if (!resolver.hasLanguage(registration.shikiLanguageId)) {
     return null
   }
-  const loadLanguageModule = loadShikiLanguage
 
   let loadedLanguagePromise: Promise<LoadedShikiLanguage> | undefined
   let loadedLanguage: LoadedShikiLanguage | undefined
 
   async function loadLanguage(): Promise<LoadedShikiLanguage> {
-    loadedLanguagePromise ??= loadLanguageModule().then((languageModule) => {
-      const loaded = createLoadedShikiLanguage(normalizeLanguageRegistrations(languageModule))
+    loadedLanguagePromise ??= resolver.loadLanguage(registration.shikiLanguageId).then((items) => {
+      const loaded = createLoadedShikiLanguage(items)
       loadedLanguage = loaded
       return loaded
     })
@@ -221,7 +336,7 @@ export function createShikiTextMateGrammarRegistration(
     scopeName: async () => (await loadLanguage()).rootScopeName,
     loadGrammar: async (scopeName) => (await loadLanguage()).grammarsByScope.get(scopeName) ?? null,
     getInjections: (scopeName) => loadedLanguage?.injectionsByScope.get(scopeName),
-    source: `shiki/langs/${registration.shikiLanguageId}`
+    source: `@shikijs/langs/${registration.shikiLanguageId}`
   }
 }
 
@@ -231,22 +346,7 @@ export const TEXTMATE_GRAMMAR_REGISTRY: readonly TextMateGrammarRegistration[] =
     return textMateRegistration ? [textMateRegistration] : []
   })
 
-export const TEXTMATE_GRAMMAR_SOURCES: readonly string[] = bundledLanguagesInfo.map(
-  (language) => language.id
-)
-
-export async function loadRegisteredTextMateGrammar(
-  scopeName: string
-): Promise<IRawGrammar | null> {
-  for (const registration of TEXTMATE_GRAMMAR_REGISTRY) {
-    const grammar = await registration.loadGrammar(scopeName)
-    if (grammar) {
-      return grammar
-    }
-  }
-
-  return null
-}
+export const TEXTMATE_GRAMMAR_SOURCES: readonly string[] = Object.keys(SHIKI_LANGUAGE_LOADERS)
 
 function registerLanguageMetadataIfNeeded(
   monaco: MonacoModule,

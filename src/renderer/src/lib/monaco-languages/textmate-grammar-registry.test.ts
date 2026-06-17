@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { LanguageRegistration } from '@shikijs/types'
 import {
+  createShikiLanguageResolver,
   createShikiTextMateGrammarRegistration,
   getMissingShikiLanguageMappings,
-  loadRegisteredTextMateGrammar,
   normalizeLanguageRegistrations,
   ORCA_SHIKI_LANGUAGE_REGISTRY,
   registerTextMateGrammarRegistry,
+  SHIKI_LANGUAGE_LOADERS,
   TEXTMATE_GRAMMAR_REGISTRY
 } from './textmate-grammar-registry'
+import type { ShikiLanguageLoader, ShikiLanguageLoaderMap } from './textmate-grammar-registry'
 import type { TextMateGrammarLoader } from './textmate-token-provider'
 
 function createMonacoMock(registeredLanguages: { id: string }[] = []) {
@@ -29,6 +32,17 @@ function createMonacoMock(registeredLanguages: { id: string }[] = []) {
   }
 
   return { monaco, factories }
+}
+
+function grammar(
+  scopeName: string,
+  options: Pick<LanguageRegistration, 'embeddedLangsLazy' | 'injectTo'> = {}
+): LanguageRegistration {
+  return { name: scopeName, scopeName, patterns: [], repository: {}, ...options }
+}
+
+function languageLoader(...registrations: LanguageRegistration[]): ShikiLanguageLoader {
+  return vi.fn(async () => ({ default: registrations }))
 }
 
 const expectedRegisteredLanguageIds = [
@@ -84,7 +98,7 @@ const expectedRegisteredLanguageIds = [
 ]
 
 describe('TEXTMATE_GRAMMAR_REGISTRY', () => {
-  it('maps Orca-detected language ids to valid Shiki languages', () => {
+  it('maps Orca-detected language ids to explicit Shiki language loaders', () => {
     expect(getMissingShikiLanguageMappings()).toEqual([])
     expect(TEXTMATE_GRAMMAR_REGISTRY.map((registration) => registration.languageId)).toEqual(
       expectedRegisteredLanguageIds
@@ -92,6 +106,21 @@ describe('TEXTMATE_GRAMMAR_REGISTRY', () => {
     expect(
       ORCA_SHIKI_LANGUAGE_REGISTRY.map((registration) => registration.monacoLanguageId)
     ).not.toContain('notebook')
+    expect(TEXTMATE_GRAMMAR_REGISTRY.map((registration) => registration.source)).toEqual(
+      expect.arrayContaining(['@shikijs/langs/tsx', '@shikijs/langs/markdown'])
+    )
+    expect(TEXTMATE_GRAMMAR_REGISTRY.map((registration) => registration.source)).not.toEqual(
+      expect.arrayContaining([expect.stringContaining(`shiki/${'langs'}`)])
+    )
+  })
+
+  it('keeps support loaders explicit without registering extra Monaco providers', () => {
+    expect(Object.keys(SHIKI_LANGUAGE_LOADERS)).toEqual(
+      expect.arrayContaining(['javascript', 'typescript', 'json', 'postcss', 'pug'])
+    )
+    expect(
+      TEXTMATE_GRAMMAR_REGISTRY.map((registration) => registration.shikiLanguageId)
+    ).not.toEqual(expect.arrayContaining(['javascript', 'typescript', 'postcss', 'pug']))
   })
 
   it('registers Monaco token provider factories and missing language metadata', () => {
@@ -168,13 +197,35 @@ describe('TEXTMATE_GRAMMAR_REGISTRY', () => {
     })
   })
 
-  it('exposes Shiki injection metadata after loading a language module', async () => {
-    const registration = TEXTMATE_GRAMMAR_REGISTRY.find((item) => item.languageId === 'vue')
-    expect(registration).toBeDefined()
+  it('loads supported lazy embedded grammars for Markdown and SFC languages', async () => {
+    const markdown = TEXTMATE_GRAMMAR_REGISTRY.find((item) => item.languageId === 'markdown')
+    const vue = TEXTMATE_GRAMMAR_REGISTRY.find((item) => item.languageId === 'vue')
+    const svelte = TEXTMATE_GRAMMAR_REGISTRY.find((item) => item.languageId === 'svelte')
+    const astro = TEXTMATE_GRAMMAR_REGISTRY.find((item) => item.languageId === 'astro')
+    expect(markdown).toBeDefined()
+    expect(vue).toBeDefined()
+    expect(svelte).toBeDefined()
+    expect(astro).toBeDefined()
 
-    await registration!.scopeName()
+    await markdown!.scopeName()
+    await vue!.scopeName()
+    await svelte!.scopeName()
+    await astro!.scopeName()
 
-    expect(registration!.getInjections('source.vue')).toEqual(
+    await expect(markdown!.loadGrammar('source.js')).resolves.toMatchObject({
+      scopeName: 'source.js'
+    })
+    await expect(markdown!.loadGrammar('source.ts')).resolves.toMatchObject({
+      scopeName: 'source.ts'
+    })
+    await expect(vue!.loadGrammar('source.tsx')).resolves.toMatchObject({ scopeName: 'source.tsx' })
+    await expect(svelte!.loadGrammar('text.html.markdown')).resolves.toMatchObject({
+      scopeName: 'text.html.markdown'
+    })
+    await expect(astro!.loadGrammar('source.css.scss')).resolves.toMatchObject({
+      scopeName: 'source.css.scss'
+    })
+    expect(vue!.getInjections('source.vue')).toEqual(
       expect.arrayContaining(['vue.directives', 'vue.interpolations'])
     )
   })
@@ -184,12 +235,6 @@ describe('TEXTMATE_GRAMMAR_REGISTRY', () => {
     expect(registration).toBeDefined()
 
     await expect(registration!.loadGrammar('source.unknown')).resolves.toBeNull()
-  })
-
-  it('loads grammar metadata through the registry helper', async () => {
-    await expect(loadRegisteredTextMateGrammar('source.python')).resolves.toMatchObject({
-      scopeName: 'source.python'
-    })
   })
 
   it('skips unknown Shiki language mappings safely', () => {
@@ -202,10 +247,71 @@ describe('TEXTMATE_GRAMMAR_REGISTRY', () => {
   })
 
   it('normalizes Shiki language module exports', () => {
-    const grammar = { scopeName: 'source.test', name: 'test', patterns: [] }
+    const item = grammar('source.test')
 
-    expect(normalizeLanguageRegistrations({ default: grammar })).toEqual([grammar])
-    expect(normalizeLanguageRegistrations({ default: [grammar] })).toEqual([grammar])
-    expect(normalizeLanguageRegistrations({ default: [null, grammar] })).toEqual([grammar])
+    expect(normalizeLanguageRegistrations({ default: item })).toEqual([item])
+    expect(normalizeLanguageRegistrations({ default: [item] })).toEqual([item])
+    expect(normalizeLanguageRegistrations({ default: [null, item] })).toEqual([item])
+  })
+})
+
+describe('createShikiLanguageResolver', () => {
+  it('recursively loads supported lazy embedded languages before the root grammar', async () => {
+    const loaders: ShikiLanguageLoaderMap = {
+      parent: languageLoader(grammar('source.parent', { embeddedLangsLazy: ['child'] })),
+      child: languageLoader(grammar('source.child', { embeddedLangsLazy: ['grandchild'] })),
+      grandchild: languageLoader(grammar('source.grandchild'))
+    }
+    const resolver = createShikiLanguageResolver(loaders)
+
+    await expect(resolver.loadLanguage('parent')).resolves.toMatchObject([
+      { scopeName: 'source.grandchild' },
+      { scopeName: 'source.child' },
+      { scopeName: 'source.parent' }
+    ])
+    expect(loaders.parent).toHaveBeenCalledTimes(1)
+    expect(loaders.child).toHaveBeenCalledTimes(1)
+    expect(loaders.grandchild).toHaveBeenCalledTimes(1)
+  })
+
+  it('protects recursive lazy embedded language loading from cycles', async () => {
+    const loaders: ShikiLanguageLoaderMap = {
+      alpha: languageLoader(grammar('source.alpha', { embeddedLangsLazy: ['bravo'] })),
+      bravo: languageLoader(grammar('source.bravo', { embeddedLangsLazy: ['alpha'] }))
+    }
+    const resolver = createShikiLanguageResolver(loaders)
+
+    await expect(resolver.loadLanguage('alpha')).resolves.toMatchObject([
+      { scopeName: 'source.bravo' },
+      { scopeName: 'source.alpha' }
+    ])
+    expect(loaders.alpha).toHaveBeenCalledTimes(1)
+    expect(loaders.bravo).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips missing lazy embedded languages without throwing', async () => {
+    const loaders: ShikiLanguageLoaderMap = {
+      parent: languageLoader(grammar('source.parent', { embeddedLangsLazy: ['missing'] }))
+    }
+    const resolver = createShikiLanguageResolver(loaders)
+
+    await expect(resolver.loadLanguage('parent')).resolves.toMatchObject([
+      { scopeName: 'source.parent' }
+    ])
+  })
+
+  it('caches loaded languages across repeated root and embedded requests', async () => {
+    const loaders: ShikiLanguageLoaderMap = {
+      parent: languageLoader(grammar('source.parent', { embeddedLangsLazy: ['child'] })),
+      child: languageLoader(grammar('source.child'))
+    }
+    const resolver = createShikiLanguageResolver(loaders)
+
+    await resolver.loadLanguage('parent')
+    await resolver.loadLanguage('parent')
+    await resolver.loadLanguage('child')
+
+    expect(loaders.parent).toHaveBeenCalledTimes(1)
+    expect(loaders.child).toHaveBeenCalledTimes(1)
   })
 })
