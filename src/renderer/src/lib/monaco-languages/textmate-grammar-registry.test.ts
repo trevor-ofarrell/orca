@@ -72,6 +72,7 @@ const expectedRegisteredLanguageIds = [
   'powershell',
   'yaml',
   'ini',
+  'toml',
   'sql',
   'graphql',
   'dockerfile',
@@ -135,6 +136,11 @@ describe('TEXTMATE_GRAMMAR_REGISTRY', () => {
       id: 'mermaid',
       extensions: ['.mmd', '.mermaid'],
       aliases: ['Mermaid']
+    })
+    expect(monaco.languages.register).toHaveBeenCalledWith({
+      id: 'toml',
+      extensions: ['.toml'],
+      aliases: ['TOML']
     })
     expect(monaco.languages.register).not.toHaveBeenCalledWith(
       expect.objectContaining({ id: 'typescript' })

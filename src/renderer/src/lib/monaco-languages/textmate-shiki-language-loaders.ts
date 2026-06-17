@@ -5,6 +5,8 @@ export type ShikiLanguageLoader = () => Promise<ShikiLanguageModule>
 export type ShikiLanguageLoaderMap = Record<string, ShikiLanguageLoader | undefined>
 
 export const SHIKI_LANGUAGE_LOADERS = {
+  // Keep these imports explicit so Vite can split per-language grammar chunks
+  // without pulling Shiki's full language catalog into Monaco startup.
   tsx: () => import('@shikijs/langs/tsx'),
   jsx: () => import('@shikijs/langs/jsx'),
   typescript: () => import('@shikijs/langs/typescript'),

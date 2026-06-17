@@ -37,6 +37,11 @@ export const ORCA_SHIKI_LANGUAGE_REGISTRY: readonly OrcaShikiLanguageRegistratio
   { monacoLanguageId: 'powershell', shikiLanguageId: 'powershell' },
   { monacoLanguageId: 'yaml', shikiLanguageId: 'yaml' },
   { monacoLanguageId: 'ini', shikiLanguageId: 'ini' },
+  {
+    monacoLanguageId: 'toml',
+    shikiLanguageId: 'toml',
+    language: { id: 'toml', extensions: ['.toml'], aliases: ['TOML'] }
+  },
   { monacoLanguageId: 'sql', shikiLanguageId: 'sql' },
   { monacoLanguageId: 'graphql', shikiLanguageId: 'graphql' },
   { monacoLanguageId: 'dockerfile', shikiLanguageId: 'docker' },
