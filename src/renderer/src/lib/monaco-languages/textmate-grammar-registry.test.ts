@@ -118,9 +118,11 @@ describe('TEXTMATE_GRAMMAR_REGISTRY', () => {
     expect(Object.keys(SHIKI_LANGUAGE_LOADERS)).toEqual(
       expect.arrayContaining(['javascript', 'typescript', 'json', 'postcss', 'pug'])
     )
-    expect(
-      TEXTMATE_GRAMMAR_REGISTRY.map((registration) => registration.shikiLanguageId)
-    ).not.toEqual(expect.arrayContaining(['javascript', 'typescript', 'postcss', 'pug']))
+
+    const shikiIds = TEXTMATE_GRAMMAR_REGISTRY.map((registration) => registration.shikiLanguageId)
+    for (const id of ['javascript', 'typescript', 'postcss', 'pug']) {
+      expect(shikiIds).not.toContain(id)
+    }
   })
 
   it('registers Monaco token provider factories and missing language metadata', () => {

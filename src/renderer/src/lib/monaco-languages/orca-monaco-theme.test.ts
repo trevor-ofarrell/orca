@@ -45,11 +45,10 @@ describe('registerOrcaMonacoTheme', () => {
 
     expect(lightTokens).toEqual(expect.arrayContaining(expectedTokens))
     expect(darkTokens).toEqual(expect.arrayContaining(expectedTokens))
-    expect(lightTokens).not.toEqual(
-      expect.arrayContaining(['meta', 'source', 'text', 'punctuation'])
-    )
-    expect(darkTokens).not.toEqual(
-      expect.arrayContaining(['meta', 'source', 'text', 'punctuation'])
-    )
+
+    for (const token of ['meta', 'source', 'text', 'punctuation']) {
+      expect(lightTokens).not.toContain(token)
+      expect(darkTokens).not.toContain(token)
+    }
   })
 })
