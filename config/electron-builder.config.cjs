@@ -102,6 +102,7 @@ module.exports = {
     'out/main/win32-utils.js',
     'out/main/daemon-entry.js',
     'out/main/computer-sidecar.js',
+    'out/main/stt-worker.js',
     'out/main/chunks/**',
     'resources/**',
     'node_modules/ws/**',
@@ -281,7 +282,15 @@ module.exports = {
     // Why: xvfb lets the bundled `orca serve` CLI run browser panes on a headless
     // Linux host — Chromium needs a display server even for offscreen rendering,
     // and serve starts Xvfb itself when present (see ensure-virtual-display.ts).
-    depends: ['python3', 'python3-gi', 'gir1.2-atspi-2.0', 'at-spi2-core', 'xdotool', 'xclip', 'xvfb']
+    depends: [
+      'python3',
+      'python3-gi',
+      'gir1.2-atspi-2.0',
+      'at-spi2-core',
+      'xdotool',
+      'xclip',
+      'xvfb'
+    ]
   },
   rpm: {
     packageName: 'orca-ide',

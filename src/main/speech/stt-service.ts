@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- Why: speech worker ownership, warm reuse, and
 timeout teardown must stay co-located so dictation lifecycle state cannot drift. */
-import { Worker } from 'worker_threads'
+import { fork, type ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
@@ -22,8 +22,23 @@ export type SttEvent =
 
 export type SttEventSink = (event: SttEvent) => void
 
+type WorkerMessage =
+  | {
+      type: 'init'
+      modelDir: string
+      modelType: string
+      streaming: boolean
+      sampleRate: number
+      files: string[]
+      hotwordsFilePath?: string
+      modelingUnit?: string
+    }
+  | { type: 'feed'; samples: Float32Array; sampleRate: number }
+  | { type: 'stop' }
+  | { type: 'teardown' }
+
 export class SttService {
-  private worker: Worker | null = null
+  private worker: ChildProcess | null = null
   private cloudSession: OpenAiTranscriptionSession | null = null
   private modelManager: ModelManager
   private activeModelId: string | null = null
@@ -135,8 +150,15 @@ export class SttService {
     const workerPath = this.getWorkerPath()
     const sherpaModulePath = this.getSherpaModulePath()
 
-    this.worker = new Worker(workerPath, {
-      workerData: { sherpaModulePath }
+    this.worker = fork(workerPath, [], {
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      serialization: 'advanced',
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        ORCA_STT_SHERPA_MODULE_PATH: sherpaModulePath
+      },
+      ...(process.platform === 'win32' ? { windowsHide: true } : {})
     })
     const worker = this.worker
 
@@ -179,8 +201,9 @@ export class SttService {
       const onStartupError = (err: Error) => {
         failStartup(err)
       }
-      const onStartupExit = (code: number) => {
-        failStartup(new Error(`Speech worker exited before ready: ${code}`))
+      const onStartupExit = (code: number | null, signal: NodeJS.Signals | null) => {
+        const detail = this.formatWorkerExitDetail(code, signal)
+        failStartup(new Error(`Speech worker exited before ready: ${detail}`))
       }
       worker.on('message', onReadyOrError)
       worker.on('error', onStartupError)
@@ -194,30 +217,20 @@ export class SttService {
     })
 
     const onWorkerMessage = (msg: SttEvent) => {
-      this.eventSink?.(msg)
+      if (this.worker === worker) {
+        this.eventSink?.(msg)
+      }
     }
 
     const onWorkerError = (err: Error) => {
-      this.eventSink?.({ type: 'error', error: String(err) })
-      if (this.worker === worker) {
-        this.cleanupActiveWorkerLifecycleListeners()
-        this.worker = null
-        this.activeModelId = null
-        this.activeHotwordsFilePath = undefined
-        this.activeOwner = null
-        this.eventSink = null
-      }
+      this.handleWorkerFailure(worker, `Speech worker error: ${String(err)}`)
     }
 
-    const onWorkerExit = () => {
-      if (this.worker === worker) {
-        this.cleanupActiveWorkerLifecycleListeners()
-        this.worker = null
-        this.activeModelId = null
-        this.activeHotwordsFilePath = undefined
-        this.activeOwner = null
-        this.eventSink = null
-      }
+    const onWorkerExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      this.handleWorkerFailure(
+        worker,
+        `Speech worker exited with ${this.formatWorkerExitDetail(code, signal)}`
+      )
     }
 
     worker.on('message', onWorkerMessage)
@@ -230,23 +243,22 @@ export class SttService {
     }
 
     const modelDir = this.modelManager.getModelDir(modelId)
-    worker.postMessage({
-      type: 'init',
-      modelDir,
-      modelType: manifest.type,
-      streaming: manifest.streaming,
-      sampleRate: manifest.sampleRate,
-      files: manifest.files ?? [],
-      hotwordsFilePath,
-      modelingUnit: manifest.modelingUnit
-    })
-
     try {
+      this.sendWorkerMessage(worker, {
+        type: 'init',
+        modelDir,
+        modelType: manifest.type,
+        streaming: manifest.streaming,
+        sampleRate: manifest.sampleRate,
+        files: manifest.files ?? [],
+        hotwordsFilePath,
+        modelingUnit: manifest.modelingUnit
+      })
       await readyPromise
     } catch (error) {
       this.cleanupActiveWorkerLifecycleListeners()
       worker.removeAllListeners()
-      void worker.terminate()
+      this.killWorker(worker, { ignoreErrors: true })
       if (this.worker === worker) {
         this.worker = null
         this.activeModelId = null
@@ -270,7 +282,18 @@ export class SttService {
       this.cloudSession.feedAudio(samples, sampleRate)
       return
     }
-    this.worker?.postMessage({ type: 'feed', samples, sampleRate }, [samples.buffer as ArrayBuffer])
+    const worker = this.worker
+    if (!worker) {
+      return
+    }
+    try {
+      this.sendWorkerMessage(worker, { type: 'feed', samples, sampleRate })
+    } catch (error) {
+      this.handleWorkerFailure(
+        worker,
+        `Speech worker IPC failed: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
   }
 
   async stopDictation(
@@ -315,11 +338,20 @@ export class SttService {
     if (!worker) {
       return
     }
-    worker.postMessage({ type: 'stop' })
+    try {
+      this.sendWorkerMessage(worker, { type: 'stop' })
+    } catch (error) {
+      this.handleWorkerFailure(
+        worker,
+        `Speech worker IPC failed: ${error instanceof Error ? error.message : String(error)}`
+      )
+      return
+    }
 
     let forcedTeardown = false
     await new Promise<void>((resolve) => {
       let settled = false
+      let receivedStopped = false
       let timeout: ReturnType<typeof setTimeout> | null = null
 
       const cleanup = (): void => {
@@ -328,47 +360,63 @@ export class SttService {
           timeout = null
         }
         worker.off('message', onStopped)
+        worker.off('error', onError)
+        worker.off('exit', onExit)
       }
 
-      const finish = (): void => {
+      const finish = (outcome: 'stopped' | 'error' | 'exit' | 'timeout'): void => {
         if (settled) {
           return
         }
         settled = true
         cleanup()
+        if (outcome !== 'stopped' && !receivedStopped) {
+          const message =
+            outcome === 'timeout'
+              ? 'Speech worker timed out while stopping.'
+              : 'Speech worker stopped unexpectedly.'
+          this.handleWorkerFailure(worker, message)
+          if (outcome === 'timeout') {
+            this.killWorker(worker, { ignoreErrors: true })
+          }
+        }
         resolve()
       }
 
       const onStopped = (msg: { type: string; text?: string; error?: string }) => {
         if (msg.type === 'stopped') {
-          finish()
+          receivedStopped = true
+          finish('stopped')
         }
+      }
+
+      const onError = () => {
+        forcedTeardown = true
+        finish('error')
+      }
+
+      const onExit = () => {
+        forcedTeardown = true
+        finish('exit')
       }
 
       timeout = setTimeout(() => {
         if (settled) {
           return
         }
-        settled = true
         forcedTeardown = true
-        cleanup()
-        // Why: a worker that cannot finish dictation is no longer reusable; do
-        // not keep it in the warm-worker slot or retain its message listeners.
-        this.cleanupActiveWorkerLifecycleListeners()
-        worker.removeAllListeners()
-        void worker.terminate().finally(resolve)
+        finish('timeout')
       }, STOP_DICTATION_TIMEOUT_MS)
+      timeout.unref?.()
 
       worker.on('message', onStopped)
+      worker.on('error', onError)
+      worker.on('exit', onExit)
     })
 
     if (this.worker === worker) {
       if (forcedTeardown) {
-        this.worker = null
-        this.activeModelId = null
-        this.activeHotwordsFilePath = undefined
-        this.activeOwner = null
-        this.eventSink = null
+        this.clearWorkerState()
       } else {
         this.activeOwner = null
         this.eventSink = null
@@ -399,9 +447,42 @@ export class SttService {
 
   private getWorkerPath(): string {
     if (app.isPackaged) {
-      return join(process.resourcesPath, 'app.asar', 'out', 'main', 'stt-worker.js')
+      // Why: forked ELECTRON_RUN_AS_NODE children cannot execute from app.asar;
+      // the STT sidecar must be unpacked like other forked main-process helpers.
+      return join(process.resourcesPath, 'app.asar.unpacked', 'out', 'main', 'stt-worker.js')
     }
     return join(__dirname, 'stt-worker.js')
+  }
+
+  private sendWorkerMessage(worker: ChildProcess, message: WorkerMessage): void {
+    if (!worker.send) {
+      throw new Error('Speech worker IPC is unavailable')
+    }
+    worker.send(message)
+  }
+
+  private formatWorkerExitDetail(code: number | null, signal: NodeJS.Signals | null): string {
+    return signal ? `signal ${signal}` : `code ${code ?? 'unknown'}`
+  }
+
+  private handleWorkerFailure(worker: ChildProcess, error: string): void {
+    if (this.worker !== worker) {
+      return
+    }
+    const sink = this.eventSink
+    this.clearIdleTeardownTimer()
+    this.cleanupActiveWorkerLifecycleListeners()
+    this.clearWorkerState()
+    sink?.({ type: 'error', error })
+    sink?.({ type: 'stopped' })
+  }
+
+  private clearWorkerState(): void {
+    this.worker = null
+    this.activeModelId = null
+    this.activeHotwordsFilePath = undefined
+    this.activeOwner = null
+    this.eventSink = null
   }
 
   private clearIdleTeardownTimer(): void {
@@ -430,9 +511,9 @@ export class SttService {
       return
     }
     const worker = this.worker
-    worker.postMessage({ type: 'teardown' })
     try {
-      await worker.terminate()
+      this.sendWorkerMessage(worker, { type: 'teardown' })
+      this.killWorker(worker, { ignoreErrors: options.ignoreTerminateErrors ?? true })
     } catch (error) {
       if (!options.ignoreTerminateErrors) {
         throw error
@@ -445,6 +526,25 @@ export class SttService {
       this.activeModelId = null
       this.activeHotwordsFilePath = undefined
       this.eventSink = null
+    }
+  }
+
+  private killWorker(
+    worker: ChildProcess,
+    options: { ignoreErrors?: boolean } = { ignoreErrors: true }
+  ): void {
+    try {
+      if (worker.killed) {
+        return
+      }
+      const signaled = worker.kill('SIGTERM')
+      if (!signaled && !options.ignoreErrors) {
+        throw new Error('Speech worker did not accept SIGTERM')
+      }
+    } catch (error) {
+      if (!options.ignoreErrors) {
+        throw error
+      }
     }
   }
 

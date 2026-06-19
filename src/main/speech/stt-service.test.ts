@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   MockOpenAiTranscriptionSession,
   MockWorker,
+  forkMock,
   getCloudSessions,
   getCreatedWorkerCount,
   getLastWorker,
@@ -15,12 +16,13 @@ const {
     static instances: HoistedMockWorker[] = []
     static emitReadyOnInit = true
     terminated = false
+    killed = false
     emitStoppedOnStop = true
     emitReadyOnInit = HoistedMockWorker.emitReadyOnInit
     messages: WorkerMessage[] = []
     private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
 
-    constructor(_path: string, _options: unknown) {
+    constructor(_path: string, _args: unknown[], _options: unknown) {
       super()
       HoistedMockWorker.created += 1
       HoistedMockWorker.instances.push(this)
@@ -53,8 +55,9 @@ const {
       }
     }
 
-    postMessage(message: WorkerMessage): void {
+    send(message: WorkerMessage, callback?: (error: Error | null) => void): boolean {
       this.messages.push(message)
+      callback?.(null)
       if (message.type === 'init' && this.emitReadyOnInit) {
         queueMicrotask(() => this.emit('message', { type: 'ready' }))
       }
@@ -64,12 +67,14 @@ const {
       if (message.type === 'teardown') {
         this.terminated = true
       }
+      return true
     }
 
-    terminate(): Promise<void> {
+    kill(_signal?: string): boolean {
       this.terminated = true
-      this.emit('exit', 0)
-      return Promise.resolve()
+      this.killed = true
+      this.emit('exit', 0, null)
+      return true
     }
   }
 
@@ -93,7 +98,12 @@ const {
     }
   }
 
+  const forkMock = vi.fn(
+    (path: string, args: unknown[], options: unknown) => new HoistedMockWorker(path, args, options)
+  )
+
   return {
+    forkMock,
     MockOpenAiTranscriptionSession: HoistedMockOpenAiTranscriptionSession,
     MockWorker: HoistedMockWorker,
     getCloudSessions: () => HoistedMockOpenAiTranscriptionSession.instances,
@@ -107,6 +117,7 @@ const {
       HoistedMockWorker.created = 0
       HoistedMockWorker.instances = []
       HoistedMockWorker.emitReadyOnInit = true
+      forkMock.mockClear()
     }
   }
 })
@@ -119,8 +130,8 @@ vi.mock('electron', () => ({
 
 type WorkerMessage = { type: string }
 
-vi.mock('worker_threads', () => ({
-  Worker: MockWorker
+vi.mock('child_process', () => ({
+  fork: forkMock
 }))
 
 vi.mock('./model-catalog', () => ({
@@ -171,6 +182,36 @@ describe('SttService', () => {
     await service.startDictation('model-a', vi.fn(), undefined, 'desktop')
 
     expect(getCreatedWorkerCount()).toBe(1)
+  })
+
+  it('starts local STT through the forked sidecar with advanced serialization', async () => {
+    const service = new SttService({
+      getModelState: vi.fn().mockResolvedValue({ id: 'model-a', status: 'ready' }),
+      getModelDir: vi.fn().mockReturnValue('/tmp/model-a')
+    } as never)
+
+    await service.startDictation('model-a', vi.fn(), undefined, 'desktop')
+    const worker = getLastWorker()
+
+    expect(forkMock).toHaveBeenCalledWith(
+      expect.stringContaining('stt-worker.js'),
+      [],
+      expect.objectContaining({
+        serialization: 'advanced',
+        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+        env: expect.objectContaining({
+          ELECTRON_RUN_AS_NODE: '1',
+          ORCA_STT_SHERPA_MODULE_PATH: expect.any(String)
+        })
+      })
+    )
+    expect(worker!.messages[0]).toMatchObject({
+      type: 'init',
+      modelDir: '/tmp/model-a',
+      modelType: 'transducer',
+      streaming: true,
+      sampleRate: 16000
+    })
   })
 
   it('keeps an idle worker warm for an hour', async () => {
@@ -425,11 +466,65 @@ describe('SttService', () => {
     expect(service.isActive()).toBe(false)
     expect(sink).toHaveBeenCalledWith({
       type: 'error',
-      error: 'Error: worker failed'
+      error: 'Speech worker error: Error: worker failed'
     })
+    expect(sink).toHaveBeenCalledWith({ type: 'stopped' })
     expect(worker!.listenerCount('message')).toBe(0)
     expect(worker!.listenerCount('error')).toBe(0)
     expect(worker!.listenerCount('exit')).toBe(0)
+  })
+
+  it('settles stop when the sidecar exits during local decode and does not reuse it', async () => {
+    const sink = vi.fn()
+    const service = new SttService({
+      getModelState: vi.fn().mockResolvedValue({ id: 'model-a', status: 'ready' }),
+      getModelDir: vi.fn().mockReturnValue('/tmp/model-a')
+    } as never)
+
+    await service.startDictation('model-a', sink, undefined, 'desktop')
+    const firstWorker = getLastWorker()
+    expect(firstWorker).toBeDefined()
+    firstWorker!.emitStoppedOnStop = false
+
+    const stopPromise = service.stopDictation('desktop')
+    firstWorker!.emit('exit', null, 'SIGTRAP')
+    await stopPromise
+
+    expect(sink).toHaveBeenCalledWith({
+      type: 'error',
+      error: 'Speech worker exited with signal SIGTRAP'
+    })
+    expect(sink).toHaveBeenCalledWith({ type: 'stopped' })
+    expect(service.isActive()).toBe(false)
+
+    await service.startDictation('model-a', vi.fn(), undefined, 'desktop')
+
+    expect(getCreatedWorkerCount()).toBe(2)
+    expect(getLastWorker()).not.toBe(firstWorker)
+  })
+
+  it('settles stop when the sidecar errors during local decode', async () => {
+    const sink = vi.fn()
+    const service = new SttService({
+      getModelState: vi.fn().mockResolvedValue({ id: 'model-a', status: 'ready' }),
+      getModelDir: vi.fn().mockReturnValue('/tmp/model-a')
+    } as never)
+
+    await service.startDictation('model-a', sink, undefined, 'desktop')
+    const worker = getLastWorker()
+    expect(worker).toBeDefined()
+    worker!.emitStoppedOnStop = false
+
+    const stopPromise = service.stopDictation('desktop')
+    worker!.emit('error', new Error('native decode failed'))
+    await stopPromise
+
+    expect(sink).toHaveBeenCalledWith({
+      type: 'error',
+      error: 'Speech worker error: Error: native decode failed'
+    })
+    expect(sink).toHaveBeenCalledWith({ type: 'stopped' })
+    expect(service.isActive()).toBe(false)
   })
 
   it('allows slow offline stop decoding before terminating the worker', async () => {
